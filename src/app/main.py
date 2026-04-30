@@ -58,22 +58,25 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
             )
 
     llama_stack_config = configuration.configuration.llama_stack
-    await AsyncLlamaStackClientHolder().load(llama_stack_config)
-    client = AsyncLlamaStackClientHolder().get_client()
-    # check if the Llama Stack version is supported by the service
-    try:
-        await check_llama_stack_version(client)
-    except APIConnectionError as e:
-        llama_stack_url = llama_stack_config.url
-        logger.error(
-            "Failed to connect to Llama Stack at '%s'. "
-            "Please verify that the 'llama_stack.url' configuration is correct "
-            "and that the Llama Stack service is running and accessible. "
-            "Original error: %s",
-            llama_stack_url,
-            e,
-        )
-        raise
+    if llama_stack_config is not None:
+        await AsyncLlamaStackClientHolder().load(llama_stack_config)
+        client = AsyncLlamaStackClientHolder().get_client()
+        # check if the Llama Stack version is supported by the service
+        try:
+            await check_llama_stack_version(client)
+        except APIConnectionError as e:
+            llama_stack_url = llama_stack_config.url
+            logger.error(
+                "Failed to connect to Llama Stack at '%s'. "
+                "Please verify that the 'llama_stack.url' configuration is correct "
+                "and that the Llama Stack service is running and accessible. "
+                "Original error: %s",
+                llama_stack_url,
+                e,
+            )
+            raise
+    else:
+        logger.info("Llama Stack not configured, skipping initialization")
 
     logger.info("Registering MCP servers")
     await register_mcp_servers_async(logger, configuration.configuration)

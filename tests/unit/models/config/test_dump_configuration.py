@@ -146,6 +146,7 @@ def test_dump_configuration(tmp_path: Path) -> None:
                 "library_client_config_path": "tests/configuration/run.yaml",
                 "timeout": 180,
             },
+            "langchain": None,
             "user_data_collection": {
                 "feedback_enabled": False,
                 "feedback_storage": None,
@@ -222,6 +223,10 @@ def test_dump_configuration(tmp_path: Path) -> None:
             },
             "splunk": None,
             "deployment_environment": "development",
+            "feature_flags": {
+                "use_langchain": False,
+                "langchain_endpoints": [],
+            },
         }
 
 
@@ -489,6 +494,7 @@ def test_dump_configuration_with_quota_limiters(tmp_path: Path) -> None:
                 "library_client_config_path": "tests/configuration/run.yaml",
                 "timeout": 180,
             },
+            "langchain": None,
             "user_data_collection": {
                 "feedback_enabled": False,
                 "feedback_storage": None,
@@ -580,6 +586,10 @@ def test_dump_configuration_with_quota_limiters(tmp_path: Path) -> None:
             },
             "splunk": None,
             "deployment_environment": "development",
+            "feature_flags": {
+                "use_langchain": False,
+                "langchain_endpoints": [],
+            },
         }
 
 
@@ -724,6 +734,7 @@ def test_dump_configuration_with_quota_limiters_different_values(
                 "library_client_config_path": "tests/configuration/run.yaml",
                 "timeout": 180,
             },
+            "langchain": None,
             "user_data_collection": {
                 "feedback_enabled": False,
                 "feedback_storage": None,
@@ -815,6 +826,10 @@ def test_dump_configuration_with_quota_limiters_different_values(
             },
             "splunk": None,
             "deployment_environment": "development",
+            "feature_flags": {
+                "use_langchain": False,
+                "langchain_endpoints": [],
+            },
         }
 
 
@@ -939,6 +954,7 @@ def test_dump_configuration_byok(tmp_path: Path) -> None:
                 "library_client_config_path": "tests/configuration/run.yaml",
                 "timeout": 180,
             },
+            "langchain": None,
             "user_data_collection": {
                 "feedback_enabled": False,
                 "feedback_storage": None,
@@ -1025,6 +1041,10 @@ def test_dump_configuration_byok(tmp_path: Path) -> None:
             },
             "splunk": None,
             "deployment_environment": "development",
+            "feature_flags": {
+                "use_langchain": False,
+                "langchain_endpoints": [],
+            },
         }
 
 
@@ -1144,6 +1164,7 @@ def test_dump_configuration_pg_namespace(tmp_path: Path) -> None:
                 "library_client_config_path": "tests/configuration/run.yaml",
                 "timeout": 180,
             },
+            "langchain": None,
             "user_data_collection": {
                 "feedback_enabled": False,
                 "feedback_storage": None,
@@ -1220,4 +1241,8 @@ def test_dump_configuration_pg_namespace(tmp_path: Path) -> None:
             },
             "splunk": None,
             "deployment_environment": "development",
+            "feature_flags": {
+                "use_langchain": False,
+                "langchain_endpoints": [],
+            },
         }

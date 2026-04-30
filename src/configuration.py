@@ -21,7 +21,9 @@ from models.config import (
     ConversationHistoryConfiguration,
     Customization,
     DatabaseConfiguration,
+    FeatureFlags,
     InferenceConfiguration,
+    LangChainConfiguration,
     LlamaStackConfiguration,
     ModelContextProtocolServer,
     OkpConfiguration,
@@ -127,11 +129,12 @@ class AppConfig:  # pylint: disable=too-many-public-methods
         return self._configuration.service
 
     @property
-    def llama_stack_configuration(self) -> LlamaStackConfiguration:
+    def llama_stack_configuration(self) -> Optional[LlamaStackConfiguration]:
         """Return Llama stack configuration.
 
         Returns:
-            LlamaStackConfiguration: The configured Llama stack settings.
+            Optional[LlamaStackConfiguration]: The configured Llama stack settings,
+            or None if LangChain is used instead.
 
         Raises:
             LogicError: If the application configuration has not been loaded.
@@ -139,6 +142,21 @@ class AppConfig:  # pylint: disable=too-many-public-methods
         if self._configuration is None:
             raise LogicError("logic error: configuration is not loaded")
         return self._configuration.llama_stack
+
+    @property
+    def langchain_configuration(self) -> Optional[LangChainConfiguration]:
+        """Return LangChain configuration.
+
+        Returns:
+            Optional[LangChainConfiguration]: The configured LangChain settings,
+            or None if Llama Stack is used instead.
+
+        Raises:
+            LogicError: If the application configuration has not been loaded.
+        """
+        if self._configuration is None:
+            raise LogicError("logic error: configuration is not loaded")
+        return self._configuration.langchain
 
     @property
     def user_data_collection_configuration(self) -> UserDataCollection:

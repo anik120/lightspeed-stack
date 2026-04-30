@@ -1831,6 +1831,136 @@ class AzureEntraIdConfiguration(ConfigurationBase):
     )
 
 
+class FeatureFlags(ConfigurationBase):
+    """Feature flags for gradual migration and rollout of llama-stack backend.
+
+    Attributes:
+        use_langchain: Master switch to enable LangChain instead of Llama Stack.
+        langchain_endpoints: List of specific endpoints to route to LangChain.
+                            If empty, use_langchain applies to all endpoints.
+    """
+
+    use_langchain: bool = Field(
+        False,
+        title="Use LangChain",
+        description="Master switch to enable LangChain instead of Llama Stack. "
+        "When true, all endpoints use LangChain unless overridden by langchain_endpoints.",
+    )
+
+    langchain_endpoints: list[str] = Field(
+        default_factory=list,
+        title="LangChain Endpoints",
+        description="List of specific endpoints to route to LangChain (e.g., ['query', 'conversations']). "
+        "If empty and use_langchain=True, all endpoints use LangChain. "
+        "If populated, only listed endpoints use LangChain regardless of use_langchain value.",
+    )
+
+
+class LangChainProviderConfig(ConfigurationBase):
+    """Configuration for a single LangChain LLM provider.
+
+    Attributes:
+        api_key: API key for the provider (optional, can use env vars).
+        api_base: Base URL for API (provider-specific, e.g., Azure endpoint).
+        api_version: API version (Azure-specific).
+        timeout: Request timeout in seconds.
+        max_retries: Maximum number of retries for failed requests.
+        models: List of model identifiers available from this provider.
+        extra_params: Additional provider-specific parameters.
+    """
+
+    api_key: Optional[SecretStr] = Field(
+        None,
+        title="API Key",
+        description="API key for this provider. If not set, will use environment variables.",
+    )
+
+    api_base: Optional[str] = Field(
+        None,
+        title="API Base URL",
+        description="Base URL for API requests (e.g., Azure endpoint).",
+    )
+
+    api_version: Optional[str] = Field(
+        None,
+        title="API Version",
+        description="API version string (Azure-specific).",
+    )
+
+    timeout: int = Field(
+        60,
+        title="Request Timeout",
+        description="Timeout for API requests in seconds.",
+        ge=1,
+        le=600,
+    )
+
+    max_retries: int = Field(
+        3,
+        title="Max Retries",
+        description="Maximum number of retry attempts for failed requests.",
+        ge=0,
+        le=10,
+    )
+
+    models: list[str] = Field(
+        default_factory=list,
+        title="Available Models",
+        description="List of model identifiers available from this provider.",
+    )
+
+    extra_params: dict[str, Any] = Field(
+        default_factory=dict,
+        title="Extra Parameters",
+        description="Additional provider-specific configuration parameters.",
+    )
+
+
+class LangChainConfiguration(ConfigurationBase):
+    """Configuration for LangChain integration.
+
+    Manages multiple LLM providers and their configurations, with support
+    for default provider and model selection.
+
+    Attributes:
+        providers: Mapping of provider names to their configurations.
+        default_provider: Default provider to use if not specified.
+        default_model: Default model to use if not specified.
+        enable_streaming: Whether to enable streaming responses.
+        enable_tracing: Whether to enable LangSmith tracing.
+    """
+
+    providers: dict[str, LangChainProviderConfig] = Field(
+        default_factory=dict,
+        title="Providers",
+        description="Mapping of provider names (openai, azure, watsonx) to configurations.",
+    )
+
+    default_provider: str = Field(
+        "openai",
+        title="Default Provider",
+        description="Default LLM provider to use if not specified in request.",
+    )
+
+    default_model: str = Field(
+        "gpt-4",
+        title="Default Model",
+        description="Default model identifier to use if not specified in request.",
+    )
+
+    enable_streaming: bool = Field(
+        True,
+        title="Enable Streaming",
+        description="Enable streaming responses for compatible models.",
+    )
+
+    enable_tracing: bool = Field(
+        False,
+        title="Enable Tracing",
+        description="Enable LangSmith tracing for debugging and observability.",
+    )
+
+
 class Configuration(ConfigurationBase):
     """Global service configuration."""
 
@@ -1846,11 +1976,20 @@ class Configuration(ConfigurationBase):
         description="This section contains Lightspeed Core Stack service configuration.",
     )
 
-    llama_stack: LlamaStackConfiguration = Field(
-        ...,
+    llama_stack: Optional[LlamaStackConfiguration] = Field(
+        None,
         title="Llama Stack configuration",
         description="This section contains Llama Stack configuration. "
-        "Lightspeed Core Stack service can call Llama Stack in library mode or in server mode.",
+        "Lightspeed Core Stack service can call Llama Stack in library mode or in server mode. "
+        "Either llama_stack or langchain must be configured.",
+    )
+
+    langchain: Optional[LangChainConfiguration] = Field(
+        None,
+        title="LangChain configuration",
+        description="This section contains LangChain configuration. "
+        "LangChain provides an alternative AI backend with support for multiple providers. "
+        "Either llama_stack or langchain must be configured.",
     )
 
     user_data_collection: UserDataCollection = Field(
@@ -1975,6 +2114,34 @@ class Configuration(ConfigurationBase):
         description=f"OKP provider settings. Only used when '{constants.OKP_RAG_ID}' is listed "
         "in rag.inline or rag.tool.",
     )
+
+    feature_flags: FeatureFlags = Field(
+        default_factory=FeatureFlags,
+        title="Feature Flags",
+        description="Feature flags for gradual migration and rollout. "
+        "Controls which backend (Llama Stack vs LangChain) is used for endpoints.",
+    )
+
+    @model_validator(mode="after")
+    def validate_backend_configuration(self) -> Self:
+        """
+        Validate that at least one AI backend is configured.
+
+        Ensures that either llama_stack or langchain configuration is provided.
+        At least one backend must be configured for the service to function.
+
+        Returns:
+            Self: The model instance after validation.
+
+        Raises:
+            ValueError: If neither llama_stack nor langchain is configured.
+        """
+        if self.llama_stack is None and self.langchain is None:
+            raise ValueError(
+                "Either 'llama_stack' or 'langchain' configuration must be provided. "
+                "At least one AI backend is required."
+            )
+        return self
 
     @model_validator(mode="after")
     def validate_mcp_auth_headers(self) -> Self:

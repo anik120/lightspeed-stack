@@ -262,6 +262,32 @@ class LLMProviderRegistry(metaclass=Singleton):
 
         return models
 
+    # Helper method for /models endpoint to get models grouped by provider
+    # The /models endpoint needs to iterate over providers and their models separately
+    # to build the response format, so this returns dict[provider -> list[models]]
+    # instead of the flat list that list_models() returns
+    async def list_models_by_provider(self) -> dict[str, list[str]]:
+        """List all models grouped by provider.
+
+        Returns:
+        -------
+            dict[str, list[str]]: Mapping from provider name to list of model IDs.
+
+        Raises:
+        ------
+            RuntimeError: If registry not initialized.
+        """
+        if not self._initialized or self._config is None:
+            raise RuntimeError(
+                "LLM provider registry not initialized. Call initialize() first."
+            )
+
+        models_by_provider: dict[str, list[str]] = {}
+        for prov_name, prov_config in self._config.providers.items():
+            models_by_provider[prov_name] = prov_config.models
+
+        return models_by_provider
+
     def clear_cache(self) -> None:
         """Clear the provider cache, forcing re-initialization on next access."""
         self._providers = {}

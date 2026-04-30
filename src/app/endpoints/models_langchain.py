@@ -36,7 +36,10 @@ async def models_langchain(model_type: ModelFilter) -> ModelsResponse:
     if langchain_config is None:
         raise HTTPException(
             status_code=503,
-            detail={"backend_name": "LangChain", "response": "LangChain not configured"},
+            detail={
+                "backend_name": "LangChain",
+                "response": "LangChain not configured",
+            },
         )
 
     logger.info("Using LangChain provider registry for models")

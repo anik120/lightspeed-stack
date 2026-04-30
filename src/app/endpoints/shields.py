@@ -1,40 +1,24 @@
-"""Handler for REST API call to list available shields."""
+"""Shields endpoint for retrieving available shields."""
 
-from typing import Annotated, Any
+from typing import Annotated
 
-from fastapi import APIRouter, HTTPException, Request
-from fastapi.params import Depends
-from llama_stack_client import APIConnectionError
+from fastapi import APIRouter, Depends, Request
 
 from authentication import get_auth_dependency
 from authentication.interface import AuthTuple
 from authorization.middleware import authorize
-from client import AsyncLlamaStackClientHolder
 from configuration import configuration
 from log import get_logger
 from models.config import Action
-from models.responses import (
-    UNAUTHORIZED_OPENAPI_EXAMPLES,
-    ForbiddenResponse,
-    InternalServerErrorResponse,
-    ServiceUnavailableResponse,
-    ShieldsResponse,
-    UnauthorizedResponse,
-)
+from models.responses import ShieldsResponse
 from utils.endpoints import check_configuration_loaded
 
 logger = get_logger(__name__)
-router = APIRouter(tags=["shields"])
 
+router = APIRouter()
 
-shields_responses: dict[int | str, dict[str, Any]] = {
-    200: ShieldsResponse.openapi_response(),
-    401: UnauthorizedResponse.openapi_response(examples=UNAUTHORIZED_OPENAPI_EXAMPLES),
-    403: ForbiddenResponse.openapi_response(examples=["endpoint"]),
-    500: InternalServerErrorResponse.openapi_response(examples=["configuration"]),
-    503: ServiceUnavailableResponse.openapi_response(
-        examples=["llama stack", "kubernetes api"]
-    ),
+shields_responses = {
+    200: {"model": ShieldsResponse},
 }
 
 
@@ -45,43 +29,31 @@ async def shields_endpoint_handler(
     auth: Annotated[AuthTuple, Depends(get_auth_dependency())],
 ) -> ShieldsResponse:
     """
-    Handle requests to the /shields endpoint.
+    Retrieve available shields.
 
-    Process GET requests to the /shields endpoint, returning a list of available
-    shields from the Llama Stack service.
+    Routes to either Llama Stack or LangChain implementation based on feature flags.
 
-    ### Parameters:
-    - request: The incoming HTTP request (used by middleware).
-    - auth: Authentication tuple from the auth dependency (used by middleware).
+    Parameters:
+        request: The incoming FastAPI request object.
+        auth: Authentication tuple from auth dependency.
 
-    ### Returns:
-    - ShieldsResponse: An object containing the list of available shields.
-
-    ### Raises:
-    - HTTPException: If unable to connect to the Llama Stack server or if
-      shield retrieval fails for any reason.
+    Returns:
+        ShieldsResponse: Object containing the list of available shields.
     """
-    # Used only by the middleware
-    _ = auth
-
-    # Nothing interesting in the request
-    _ = request
-
     check_configuration_loaded(configuration)
 
-    llama_stack_configuration = configuration.llama_stack_configuration
-    logger.info("Llama stack config: %s", llama_stack_configuration)
+    feature_flags = configuration.configuration.feature_flags
+    use_langchain = (
+        feature_flags.use_langchain or "shields" in feature_flags.langchain_endpoints
+    )
 
-    try:
-        # try to get Llama Stack client
-        client = AsyncLlamaStackClientHolder().get_client()
-        # retrieve shields
-        shields = await client.shields.list()
-        s = [dict(s) for s in shields]
-        return ShieldsResponse(shields=s)
+    if use_langchain:
+        from app.endpoints.shields_langchain import shields_langchain
 
-    # connection to Llama Stack server
-    except APIConnectionError as e:
-        logger.error("Unable to connect to Llama Stack: %s", e)
-        response = ServiceUnavailableResponse(backend_name="Llama Stack", cause=str(e))
-        raise HTTPException(**response.model_dump()) from e
+        logger.info("Routing /shields to LangChain implementation")
+        return await shields_langchain()
+
+    from app.endpoints.shields_llama_stack import shields_llama_stack
+
+    logger.info("Routing /shields to Llama Stack implementation")
+    return await shields_llama_stack()

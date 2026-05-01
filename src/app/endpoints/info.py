@@ -1,14 +1,12 @@
-"""Handler for REST API call to provide info."""
+"""Info endpoint for retrieving service and backend information."""
 
 from typing import Annotated, Any
 
-from fastapi import APIRouter, Depends, HTTPException, Request
-from llama_stack_client import APIConnectionError
+from fastapi import APIRouter, Depends, Request
 
 from authentication import get_auth_dependency
 from authentication.interface import AuthTuple
 from authorization.middleware import authorize
-from client import AsyncLlamaStackClientHolder
 from configuration import configuration
 from log import get_logger
 from models.config import Action
@@ -19,7 +17,7 @@ from models.responses import (
     ServiceUnavailableResponse,
     UnauthorizedResponse,
 )
-from version import __version__
+from utils.endpoints import check_configuration_loaded
 
 logger = get_logger(__name__)
 router = APIRouter(tags=["info"])
@@ -30,7 +28,7 @@ get_info_responses: dict[int | str, dict[str, Any]] = {
     401: UnauthorizedResponse.openapi_response(examples=UNAUTHORIZED_OPENAPI_EXAMPLES),
     403: ForbiddenResponse.openapi_response(examples=["endpoint"]),
     503: ServiceUnavailableResponse.openapi_response(
-        examples=["llama stack", "kubernetes api"]
+        examples=["backend service", "kubernetes api"]
     ),
 }
 
@@ -42,48 +40,31 @@ async def info_endpoint_handler(
     request: Request,
 ) -> InfoResponse:
     """
-    Handle request to the /info endpoint.
+    Retrieve service information.
 
-    Process GET requests to the /info endpoint, returning the
-    service name, version and Llama-stack version.
+    Routes to either Llama Stack or LangChain implementation based on feature flags.
 
-    ### Parameters:
-    - request: The incoming HTTP request (used by middleware).
-    - auth: Authentication tuple from the auth dependency (used by middleware).
+    Parameters:
+        request: The incoming HTTP request.
+        auth: Authentication tuple from the auth dependency.
 
-    ### Raises:
-    - HTTPException: with status 500 and a detail object
-      containing `response` and `cause` when unable to connect to
-      Llama Stack. It can also return status 401 or 403 for
-      unauthorized access.
-
-    ### Returns:
-    - InfoResponse: An object containing the service's name and version.
+    Returns:
+        InfoResponse: Service name, version, and backend version.
     """
-    # Used only for authorization
-    _ = auth
+    check_configuration_loaded(configuration)
 
-    # Nothing interesting in the request
-    _ = request
+    feature_flags = configuration.configuration.feature_flags
+    use_langchain = (
+        feature_flags.use_langchain or "info" in feature_flags.langchain_endpoints
+    )
 
-    logger.info("Response to /v1/info endpoint")
+    if use_langchain:
+        from app.endpoints.info_langchain import info_langchain
 
-    try:
-        # try to get Llama Stack client
-        client = AsyncLlamaStackClientHolder().get_client()
-        # retrieve version
-        llama_stack_version_object = await client.inspect.version()
-        llama_stack_version = llama_stack_version_object.version
-        logger.debug("Service name: %s", configuration.configuration.name)
-        logger.debug("Service version: %s", __version__)
-        logger.debug("Llama Stack version: %s", llama_stack_version)
-        return InfoResponse(
-            name=configuration.configuration.name,
-            service_version=__version__,
-            llama_stack_version=llama_stack_version,
-        )
-    # connection to Llama Stack server
-    except APIConnectionError as e:
-        logger.error("Unable to connect to Llama Stack: %s", e)
-        response = ServiceUnavailableResponse(backend_name="Llama Stack", cause=str(e))
-        raise HTTPException(**response.model_dump()) from e
+        logger.info("Routing /info to LangChain implementation")
+        return await info_langchain()
+
+    from app.endpoints.info_llama_stack import info_llama_stack
+
+    logger.info("Routing /info to Llama Stack implementation")
+    return await info_llama_stack()

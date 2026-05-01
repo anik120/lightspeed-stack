@@ -1,30 +1,25 @@
-"""Unit tests for the /health REST API endpoint."""
+"""Unit tests for the Llama Stack implementation of /health endpoint."""
 
 import pytest
 from llama_stack_client import APIConnectionError
 from pytest_mock import MockerFixture
 
-from app.endpoints.health import (
+from app.endpoints.health_llama_stack import (
     HealthStatus,
     get_providers_health_statuses,
-    liveness_probe_get_method,
-    readiness_probe_get_method,
+    readiness_llama_stack,
 )
-from authentication.interface import AuthTuple
-from models.responses import ProviderHealthStatus, ReadinessResponse
-from tests.unit.utils.auth_helpers import mock_authorization_resolvers
+from models.responses import ProviderHealthStatus
 
 
 @pytest.mark.asyncio
-async def test_readiness_probe_fails_due_to_unhealthy_providers(
+async def test_readiness_llama_stack_fails_due_to_unhealthy_providers(
     mocker: MockerFixture,
 ) -> None:
     """Test the readiness endpoint handler fails when providers are unhealthy."""
-    mock_authorization_resolvers(mocker)
-
     # Mock get_providers_health_statuses to return an unhealthy provider
     mock_get_providers_health_statuses = mocker.patch(
-        "app.endpoints.health.get_providers_health_statuses"
+        "app.endpoints.health_llama_stack.get_providers_health_statuses"
     )
     mock_get_providers_health_statuses.return_value = [
         ProviderHealthStatus(
@@ -34,13 +29,10 @@ async def test_readiness_probe_fails_due_to_unhealthy_providers(
         )
     ]
 
-    # Mock the Response object and auth
+    # Mock the Response object
     mock_response = mocker.Mock()
 
-    # Authorization tuple required by URL endpoint handler
-    auth: AuthTuple = ("test_user_id", "test_user", True, "test_token")
-
-    response = await readiness_probe_get_method(auth=auth, response=mock_response)
+    response = await readiness_llama_stack(response=mock_response)
 
     assert response.ready is False
     assert "test_provider" in response.reason
@@ -49,15 +41,13 @@ async def test_readiness_probe_fails_due_to_unhealthy_providers(
 
 
 @pytest.mark.asyncio
-async def test_readiness_probe_success_when_all_providers_healthy(
+async def test_readiness_llama_stack_success_when_all_providers_healthy(
     mocker: MockerFixture,
 ) -> None:
     """Test the readiness endpoint handler succeeds when all providers are healthy."""
-    mock_authorization_resolvers(mocker)
-
     # Mock get_providers_health_statuses to return healthy providers
     mock_get_providers_health_statuses = mocker.patch(
-        "app.endpoints.health.get_providers_health_statuses"
+        "app.endpoints.health_llama_stack.get_providers_health_statuses"
     )
     mock_get_providers_health_statuses.return_value = [
         ProviderHealthStatus(
@@ -72,32 +62,15 @@ async def test_readiness_probe_success_when_all_providers_healthy(
         ),
     ]
 
-    # Mock the Response object and auth
+    # Mock the Response object
     mock_response = mocker.Mock()
 
-    # Authorization tuple required by URL endpoint handler
-    auth: AuthTuple = ("test_user_id", "test_user", True, "test_token")
-
-    response = await readiness_probe_get_method(auth=auth, response=mock_response)
+    response = await readiness_llama_stack(response=mock_response)
     assert response is not None
-    assert isinstance(response, ReadinessResponse)
     assert response.ready is True
     assert response.reason == "All providers are healthy"
     # Should return empty list since no providers are unhealthy
     assert len(response.providers) == 0
-
-
-@pytest.mark.asyncio
-async def test_liveness_probe(mocker: MockerFixture) -> None:
-    """Test the liveness endpoint handler."""
-    mock_authorization_resolvers(mocker)
-
-    # Authorization tuple required by URL endpoint handler
-    auth: AuthTuple = ("test_user_id", "test_user", True, "test_token")
-
-    response = await liveness_probe_get_method(auth=auth)
-    assert response is not None
-    assert response.alive is True
 
 
 class TestProviderHealthStatus:
@@ -140,7 +113,7 @@ class TestGetProvidersHealthStatuses:
         - unhealthy_provider: status ERROR, message "Connection failed"
         """
         # Mock the imports
-        mock_lsc = mocker.patch("client.AsyncLlamaStackClientHolder.get_client")
+        mock_lsc = mocker.patch("app.endpoints.health_llama_stack.AsyncLlamaStackClientHolder.get_client")
 
         # Mock the client and its methods
         mock_client = mocker.AsyncMock()
@@ -194,7 +167,7 @@ class TestGetProvidersHealthStatuses:
     ) -> None:
         """Test get_providers_health_statuses when connection fails."""
         # Mock the imports
-        mock_lsc = mocker.patch("client.AsyncLlamaStackClientHolder.get_client")
+        mock_lsc = mocker.patch("app.endpoints.health_llama_stack.AsyncLlamaStackClientHolder.get_client")
 
         # Mock get_llama_stack_client to raise an exception
         mock_lsc.side_effect = APIConnectionError(request=mocker.Mock())

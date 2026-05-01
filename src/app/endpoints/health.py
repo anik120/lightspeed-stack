@@ -5,23 +5,20 @@ requests. Note that these endpoints can be accessed using GET or HEAD HTTP
 methods. For HEAD HTTP method, just the HTTP response code is used.
 """
 
-from enum import Enum
 from typing import Annotated, Any
 
-from fastapi import APIRouter, Depends, Response, status
-from llama_stack_client import APIConnectionError
+from fastapi import APIRouter, Depends, Response
 
 from authentication import get_auth_dependency
 from authentication.interface import AuthTuple
 from authorization.middleware import authorize
-from client import AsyncLlamaStackClientHolder
+from configuration import configuration
 from log import get_logger
 from models.config import Action
 from models.responses import (
     UNAUTHORIZED_OPENAPI_EXAMPLES,
     ForbiddenResponse,
     LivenessResponse,
-    ProviderHealthStatus,
     ReadinessResponse,
     ServiceUnavailableResponse,
     UnauthorizedResponse,
@@ -31,24 +28,12 @@ logger = get_logger(__name__)
 router = APIRouter(tags=["health"])
 
 
-# HealthStatus enum was removed from llama_stack in newer versions
-# Defining locally for compatibility
-class HealthStatus(str, Enum):
-    """Health status enum for provider health checks."""
-
-    OK = "ok"
-    ERROR = "Error"
-    NOT_IMPLEMENTED = "not_implemented"
-    HEALTHY = "healthy"
-    UNKNOWN = "unknown"
-
-
 get_readiness_responses: dict[int | str, dict[str, Any]] = {
     200: ReadinessResponse.openapi_response(),
     401: UnauthorizedResponse.openapi_response(examples=UNAUTHORIZED_OPENAPI_EXAMPLES),
     403: ForbiddenResponse.openapi_response(examples=["endpoint"]),
     503: ServiceUnavailableResponse.openapi_response(
-        examples=["llama stack", "kubernetes api"]
+        examples=["backend service", "kubernetes api"]
     ),
 }
 
@@ -60,41 +45,6 @@ get_liveness_responses: dict[int | str, dict[str, Any]] = {
 }
 
 
-async def get_providers_health_statuses() -> list[ProviderHealthStatus]:
-    """
-    Retrieve the health status of all configured providers.
-
-    Returns:
-        list[ProviderHealthStatus]: A list containing the health
-        status of each provider. If provider health cannot be
-        determined, returns a single entry indicating an error.
-    """
-    try:
-        client = AsyncLlamaStackClientHolder().get_client()
-
-        providers = await client.providers.list()
-        logger.debug("Found %d providers", len(providers))
-
-        return [
-            ProviderHealthStatus(
-                provider_id=provider.provider_id,
-                status=str(provider.health.get("status", "unknown")),
-                message=str(provider.health.get("message", "")),
-            )
-            for provider in providers
-        ]
-
-    except APIConnectionError as e:
-        logger.error("Failed to check providers health: %s", e)
-        return [
-            ProviderHealthStatus(
-                provider_id="unknown",
-                status=HealthStatus.ERROR.value,
-                message=f"Failed to initialize health check: {e!s}",
-            )
-        ]
-
-
 @router.get("/readiness", responses=get_readiness_responses)
 @authorize(Action.INFO)
 async def readiness_probe_get_method(
@@ -104,41 +54,35 @@ async def readiness_probe_get_method(
     """
     Handle the readiness probe endpoint, returning service readiness.
 
-    If any provider reports an error status, responds with HTTP 503
-    and details of unhealthy providers; otherwise, indicates the
-    service is ready.
+    Routes to either Llama Stack or LangChain implementation based on feature flags.
 
-    ### Parameters:
-    - response: The outgoing HTTP response (used by middleware).
-    - auth: Authentication tuple from the auth dependency (used by middleware).
+    Parameters:
+        auth: Authentication tuple from the auth dependency (used by middleware).
+        response: The outgoing HTTP response (used by middleware).
 
-    ### Returns:
-    - ReadinessResponse: Object with `ready` indicating overall readiness,
-      `reason` explaining the outcome, and `providers` containing the list of
-      unhealthy ProviderHealthStatus entries (empty when ready).
+    Returns:
+        ReadinessResponse: Object with `ready` indicating overall readiness,
+        `reason` explaining the outcome, and `providers` containing the list of
+        unhealthy ProviderHealthStatus entries (empty when ready).
     """
     # Used only for authorization
     _ = auth
 
-    logger.info("Response to /v1/readiness endpoint")
+    feature_flags = configuration.configuration.feature_flags
+    use_langchain = (
+        feature_flags.use_langchain or "health" in feature_flags.langchain_endpoints
+    )
 
-    provider_statuses = await get_providers_health_statuses()
+    if use_langchain:
+        from app.endpoints.health_langchain import readiness_langchain
 
-    # Check if any provider is unhealthy (not counting not_implemented as unhealthy)
-    unhealthy_providers = [
-        p for p in provider_statuses if p.status == HealthStatus.ERROR.value
-    ]
+        logger.info("Routing /readiness to LangChain implementation")
+        return await readiness_langchain(response)
 
-    if unhealthy_providers:
-        ready = False
-        unhealthy_provider_names = [p.provider_id for p in unhealthy_providers]
-        reason = f"Providers not healthy: {', '.join(unhealthy_provider_names)}"
-        response.status_code = status.HTTP_503_SERVICE_UNAVAILABLE
-    else:
-        ready = True
-        reason = "All providers are healthy"
+    from app.endpoints.health_llama_stack import readiness_llama_stack
 
-    return ReadinessResponse(ready=ready, reason=reason, providers=unhealthy_providers)
+    logger.info("Routing /readiness to Llama Stack implementation")
+    return await readiness_llama_stack(response)
 
 
 @router.get("/liveness", responses=get_liveness_responses)
@@ -149,11 +93,13 @@ async def liveness_probe_get_method(
     """
     Return the liveness status of the service.
 
-    ### Parameters:
-    - auth: Authentication tuple from the auth dependency (used by middleware).
+    This endpoint does not depend on the backend, so no routing is needed.
 
-    ### Returns:
-    - LivenessResponse: Indicates that the service is alive.
+    Parameters:
+        auth: Authentication tuple from the auth dependency (used by middleware).
+
+    Returns:
+        LivenessResponse: Indicates that the service is alive.
     """
     # Used only for authorization
     _ = auth

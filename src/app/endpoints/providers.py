@@ -1,16 +1,12 @@
-"""Handler for REST API calls to list and retrieve available providers."""
+"""Providers endpoint for listing and retrieving available providers."""
 
 from typing import Annotated, Any
 
-from fastapi import APIRouter, HTTPException, Request
-from fastapi.params import Depends
-from llama_stack_client import APIConnectionError, BadRequestError
-from llama_stack_client.types import ProviderListResponse
+from fastapi import APIRouter, Depends, Request
 
 from authentication import get_auth_dependency
 from authentication.interface import AuthTuple
 from authorization.middleware import authorize
-from client import AsyncLlamaStackClientHolder
 from configuration import configuration
 from log import get_logger
 from models.config import Action
@@ -36,7 +32,7 @@ providers_list_responses: dict[int | str, dict[str, Any]] = {
     403: ForbiddenResponse.openapi_response(examples=["endpoint"]),
     500: InternalServerErrorResponse.openapi_response(examples=["configuration"]),
     503: ServiceUnavailableResponse.openapi_response(
-        examples=["llama stack", "kubernetes api"]
+        examples=["backend service", "kubernetes api"]
     ),
 }
 
@@ -47,7 +43,7 @@ provider_get_responses: dict[int | str, dict[str, Any]] = {
     404: NotFoundResponse.openapi_response(examples=["provider"]),
     500: InternalServerErrorResponse.openapi_response(examples=["configuration"]),
     503: ServiceUnavailableResponse.openapi_response(
-        examples=["llama stack", "kubernetes api"]
+        examples=["backend service", "kubernetes api"]
     ),
 }
 
@@ -61,61 +57,32 @@ async def providers_endpoint_handler(
     """
     List all available providers grouped by API type.
 
-    ### Parameters:
-    - request: The incoming HTTP request.
-    - auth: Authentication tuple from the auth dependency.
+    Routes to either Llama Stack or LangChain implementation based on feature flags.
 
-    ### Returns:
-    - ProvidersListResponse: Mapping from API type to list of providers.
-
-    ### Raises:
-    - HTTPException:
-    - 401: Authentication failed
-    - 403: Authorization failed
-    - 500: Lightspeed Stack configuration not loaded
-    - 503: Unable to connect to Llama Stack
-    """
-    # Used only by the middleware
-    _ = auth
-
-    # Nothing interesting in the request
-    _ = request
-
-    check_configuration_loaded(configuration)
-
-    llama_stack_configuration = configuration.llama_stack_configuration
-    logger.info("Llama stack config: %s", llama_stack_configuration)
-
-    try:
-        client = AsyncLlamaStackClientHolder().get_client()
-        providers: ProviderListResponse = await client.providers.list()
-    except APIConnectionError as e:
-        logger.error("Unable to connect to Llama Stack: %s", e)
-        response = ServiceUnavailableResponse(backend_name="Llama Stack", cause=str(e))
-        raise HTTPException(**response.model_dump()) from e
-
-    return ProvidersListResponse(providers=group_providers(providers))
-
-
-def group_providers(providers: ProviderListResponse) -> dict[str, list[dict[str, Any]]]:
-    """Group a list of ProviderInfo objects by their API type.
-
-    Args:
-        providers: List of ProviderInfo objects.
+    Parameters:
+        request: The incoming HTTP request.
+        auth: Authentication tuple from the auth dependency.
 
     Returns:
-        Mapping from API type to list of providers containing
-        only 'provider_id' and 'provider_type'.
+        ProvidersListResponse: Mapping from API type to list of providers.
     """
-    result: dict[str, list[dict[str, Any]]] = {}
-    for provider in providers:
-        result.setdefault(provider.api, []).append(
-            {
-                "provider_id": provider.provider_id,
-                "provider_type": provider.provider_type,
-            }
-        )
-    return result
+    check_configuration_loaded(configuration)
+
+    feature_flags = configuration.configuration.feature_flags
+    use_langchain = (
+        feature_flags.use_langchain or "providers" in feature_flags.langchain_endpoints
+    )
+
+    if use_langchain:
+        from app.endpoints.providers_langchain import providers_langchain
+
+        logger.info("Routing /providers to LangChain implementation")
+        return await providers_langchain()
+
+    from app.endpoints.providers_llama_stack import providers_llama_stack
+
+    logger.info("Routing /providers to Llama Stack implementation")
+    return await providers_llama_stack()
 
 
 @router.get("/providers/{provider_id}", responses=provider_get_responses)
@@ -128,43 +95,30 @@ async def get_provider_endpoint_handler(
     """
     Retrieve a single provider identified by its unique ID.
 
-    ### Parameters:
-    - request: The incoming HTTP request.
-    - provider_id: Provider identification string
-    - auth: Authentication tuple from the auth dependency.
+    Routes to either Llama Stack or LangChain implementation based on feature flags.
 
-    ### Returns:
-    - ProviderResponse: Provider details.
+    Parameters:
+        request: The incoming HTTP request.
+        provider_id: Provider identification string.
+        auth: Authentication tuple from the auth dependency.
 
-    ### Raises:
-    - HTTPException:
-    - 401: Authentication failed
-    - 403: Authorization failed
-    - 404: Provider not found
-    - 500: Lightspeed Stack configuration not loaded
-    - 503: Unable to connect to Llama Stack
+    Returns:
+        ProviderResponse: Provider details.
     """
-    # Used only by the middleware
-    _ = auth
-
-    # Nothing interesting in the request
-    _ = request
-
     check_configuration_loaded(configuration)
 
-    llama_stack_configuration = configuration.llama_stack_configuration
-    logger.info("Llama stack config: %s", llama_stack_configuration)
+    feature_flags = configuration.configuration.feature_flags
+    use_langchain = (
+        feature_flags.use_langchain or "providers" in feature_flags.langchain_endpoints
+    )
 
-    try:
-        client = AsyncLlamaStackClientHolder().get_client()
-        provider = await client.providers.retrieve(provider_id)
-        return ProviderResponse(**provider.model_dump())
+    if use_langchain:
+        from app.endpoints.providers_langchain import get_provider_langchain
 
-    except APIConnectionError as e:
-        logger.error("Unable to connect to Llama Stack: %s", e)
-        response = ServiceUnavailableResponse(backend_name="Llama Stack", cause=str(e))
-        raise HTTPException(**response.model_dump()) from e
+        logger.info("Routing /providers/{provider_id} to LangChain implementation")
+        return await get_provider_langchain(provider_id)
 
-    except BadRequestError as e:
-        response = NotFoundResponse(resource="provider", resource_id=provider_id)
-        raise HTTPException(**response.model_dump()) from e
+    from app.endpoints.providers_llama_stack import get_provider_llama_stack
+
+    logger.info("Routing /providers/{provider_id} to Llama Stack implementation")
+    return await get_provider_llama_stack(provider_id)

@@ -1,61 +1,35 @@
-"""Unit tests for the /rags REST API endpoints."""
+"""Unit tests for the Llama Stack implementation of /rags endpoints."""
 
 from pathlib import Path
 from typing import Any
 
 import pytest
-from fastapi import HTTPException, Request, status
+from fastapi import HTTPException, status
 from llama_stack_client import APIConnectionError, BadRequestError
 from pytest_mock import MockerFixture
 
-from app.endpoints.rags import (
+from app.endpoints.rags_llama_stack import (
     _resolve_rag_id_to_vector_db_id,
-    get_rag_endpoint_handler,
-    rags_endpoint_handler,
+    get_rag_llama_stack,
+    list_rags_llama_stack,
 )
-from authentication.interface import AuthTuple
 from configuration import AppConfig
-from tests.unit.utils.auth_helpers import mock_authorization_resolvers
 
 
 @pytest.mark.asyncio
-async def test_rags_endpoint_configuration_not_loaded(
-    mocker: MockerFixture,
-) -> None:
-    """Test that /rags endpoint raises HTTP 500 if configuration is not loaded."""
-    mock_authorization_resolvers(mocker)
-    mock_config = AppConfig()
-    mock_config._configuration = None  # pylint: disable=protected-access
-    mocker.patch("app.endpoints.rags.configuration", mock_config)
-    request = Request(scope={"type": "http"})
-
-    # Authorization tuple required by URL endpoint handler
-    auth: AuthTuple = ("test_user_id", "test_user", True, "test_token")
-
-    with pytest.raises(HTTPException) as e:
-        await rags_endpoint_handler(request=request, auth=auth)
-    assert e.value.status_code == status.HTTP_500_INTERNAL_SERVER_ERROR
-
-
-@pytest.mark.asyncio
-async def test_rags_endpoint_connection_error(
+async def test_rags_llama_stack_connection_error(
     mocker: MockerFixture, minimal_config: AppConfig
 ) -> None:
-    """Test that /rags endpoint raises HTTP 503 if Llama Stack connection fails."""
-    mocker.patch("app.endpoints.rags.configuration", minimal_config)
+    """Test that list_rags_llama_stack raises HTTP 503 if Llama Stack connection fails."""
+    mocker.patch("app.endpoints.rags_llama_stack.configuration", minimal_config)
     mock_client = mocker.AsyncMock()
     mock_client.vector_stores.list.side_effect = APIConnectionError(request=None)  # type: ignore
     mocker.patch(
-        "app.endpoints.rags.AsyncLlamaStackClientHolder"
+        "app.endpoints.rags_llama_stack.AsyncLlamaStackClientHolder"
     ).return_value.get_client.return_value = mock_client
 
-    request = Request(scope={"type": "http"})
-
-    # Authorization tuple required by URL endpoint handler
-    auth: AuthTuple = ("test_user_id", "test_user", True, "test_token")
-
     with pytest.raises(HTTPException) as e:
-        await rags_endpoint_handler(request=request, auth=auth)
+        await list_rags_llama_stack()
     assert e.value.status_code == status.HTTP_503_SERVICE_UNAVAILABLE
     detail = e.value.detail
     assert isinstance(detail, dict)
@@ -64,11 +38,11 @@ async def test_rags_endpoint_connection_error(
 
 
 @pytest.mark.asyncio
-async def test_rags_endpoint_success(
+async def test_rags_llama_stack_success(
     mocker: MockerFixture, minimal_config: AppConfig
 ) -> None:
-    """Test that /rags endpoint returns list of RAG IDs."""
-    mocker.patch("app.endpoints.rags.configuration", minimal_config)
+    """Test that list_rags_llama_stack returns list of RAG IDs."""
+    mocker.patch("app.endpoints.rags_llama_stack.configuration", minimal_config)
 
     # pylint: disable=R0903
     class RagInfo:
@@ -103,43 +77,19 @@ async def test_rags_endpoint_success(
     mock_client = mocker.AsyncMock()
     mock_client.vector_stores.list.return_value = RagList()
     mocker.patch(
-        "app.endpoints.rags.AsyncLlamaStackClientHolder"
+        "app.endpoints.rags_llama_stack.AsyncLlamaStackClientHolder"
     ).return_value.get_client.return_value = mock_client
 
-    request = Request(scope={"type": "http"})
-
-    # Authorization tuple required by URL endpoint handler
-    auth: AuthTuple = ("test_user_id", "test_user", True, "test_token")
-
-    response = await rags_endpoint_handler(request=request, auth=auth)
+    response = await list_rags_llama_stack()
     assert len(response.rags) == 3
 
 
 @pytest.mark.asyncio
-async def test_rag_info_endpoint_configuration_not_loaded(
-    mocker: MockerFixture,
-) -> None:
-    """Test that /rags/{rag_id} endpoint raises HTTP 500 if configuration is not loaded."""
-    mock_authorization_resolvers(mocker)
-    mock_config = AppConfig()
-    mock_config._configuration = None  # pylint: disable=protected-access
-    mocker.patch("app.endpoints.rags.configuration", mock_config)
-    request = Request(scope={"type": "http"})
-
-    # Authorization tuple required by URL endpoint handler
-    auth: AuthTuple = ("test_user_id", "test_user", True, "test_token")
-
-    with pytest.raises(HTTPException) as e:
-        await get_rag_endpoint_handler(request=request, auth=auth, rag_id="xyzzy")
-    assert e.value.status_code == status.HTTP_500_INTERNAL_SERVER_ERROR
-
-
-@pytest.mark.asyncio
-async def test_rag_info_endpoint_rag_not_found(
+async def test_get_rag_llama_stack_rag_not_found(
     mocker: MockerFixture, minimal_config: AppConfig
 ) -> None:
-    """Test that /rags/{rag_id} endpoint returns HTTP 404 when the requested RAG is not found."""
-    mocker.patch("app.endpoints.rags.configuration", minimal_config)
+    """Test that get_rag_llama_stack returns HTTP 404 when the requested RAG is not found."""
+    mocker.patch("app.endpoints.rags_llama_stack.configuration", minimal_config)
     mock_client = mocker.AsyncMock()
     mock_client.vector_stores.retrieve = mocker.AsyncMock(
         side_effect=BadRequestError(
@@ -149,16 +99,11 @@ async def test_rag_info_endpoint_rag_not_found(
         )
     )  # type: ignore
     mocker.patch(
-        "app.endpoints.rags.AsyncLlamaStackClientHolder"
+        "app.endpoints.rags_llama_stack.AsyncLlamaStackClientHolder"
     ).return_value.get_client.return_value = mock_client
 
-    request = Request(scope={"type": "http"})
-
-    # Authorization tuple required by URL endpoint handler
-    auth: AuthTuple = ("test_user_id", "test_user", True, "test_token")
-
     with pytest.raises(HTTPException) as e:
-        await get_rag_endpoint_handler(request=request, auth=auth, rag_id="xyzzy")
+        await get_rag_llama_stack("xyzzy")
     assert e.value.status_code == status.HTTP_404_NOT_FOUND
     detail = e.value.detail
     assert isinstance(detail, dict)
@@ -167,26 +112,21 @@ async def test_rag_info_endpoint_rag_not_found(
 
 
 @pytest.mark.asyncio
-async def test_rag_info_endpoint_connection_error(
+async def test_get_rag_llama_stack_connection_error(
     mocker: MockerFixture, minimal_config: AppConfig
 ) -> None:
-    """Test that /rags/{rag_id} endpoint raises HTTP 503 if Llama Stack connection fails."""
-    mocker.patch("app.endpoints.rags.configuration", minimal_config)
+    """Test that get_rag_llama_stack raises HTTP 503 if Llama Stack connection fails."""
+    mocker.patch("app.endpoints.rags_llama_stack.configuration", minimal_config)
     mock_client = mocker.AsyncMock()
     mock_client.vector_stores.retrieve.side_effect = APIConnectionError(
         request=None  # type: ignore
     )
     mocker.patch(
-        "app.endpoints.rags.AsyncLlamaStackClientHolder"
+        "app.endpoints.rags_llama_stack.AsyncLlamaStackClientHolder"
     ).return_value.get_client.return_value = mock_client
 
-    request = Request(scope={"type": "http"})
-
-    # Authorization tuple required by URL endpoint handler
-    auth: AuthTuple = ("test_user_id", "test_user", True, "test_token")
-
     with pytest.raises(HTTPException) as e:
-        await get_rag_endpoint_handler(request=request, auth=auth, rag_id="xyzzy")
+        await get_rag_llama_stack("xyzzy")
     assert e.value.status_code == status.HTTP_503_SERVICE_UNAVAILABLE
     detail = e.value.detail
     assert isinstance(detail, dict)
@@ -195,11 +135,11 @@ async def test_rag_info_endpoint_connection_error(
 
 
 @pytest.mark.asyncio
-async def test_rag_info_endpoint_success(
+async def test_get_rag_llama_stack_success(
     mocker: MockerFixture, minimal_config: AppConfig
 ) -> None:
-    """Test that /rags/{rag_id} endpoint returns information about selected RAG."""
-    mocker.patch("app.endpoints.rags.configuration", minimal_config)
+    """Test that get_rag_llama_stack returns information about selected RAG."""
+    mocker.patch("app.endpoints.rags_llama_stack.configuration", minimal_config)
 
     # pylint: disable=R0902
     # pylint: disable=R0903
@@ -231,17 +171,10 @@ async def test_rag_info_endpoint_success(
     mock_client = mocker.AsyncMock()
     mock_client.vector_stores.retrieve.return_value = RagInfo()
     mocker.patch(
-        "app.endpoints.rags.AsyncLlamaStackClientHolder"
+        "app.endpoints.rags_llama_stack.AsyncLlamaStackClientHolder"
     ).return_value.get_client.return_value = mock_client
 
-    request = Request(scope={"type": "http"})
-
-    # Authorization tuple required by URL endpoint handler
-    auth: AuthTuple = ("test_user_id", "test_user", True, "test_token")
-
-    response = await get_rag_endpoint_handler(
-        request=request, auth=auth, rag_id="xyzzy"
-    )
+    response = await get_rag_llama_stack("xyzzy")
     assert response.id == "xyzzy"
     assert response.name == "rag_name"
     assert response.created_at == 123456
@@ -293,12 +226,12 @@ def _make_byok_config(tmp_path: Any) -> AppConfig:
 
 
 @pytest.mark.asyncio
-async def test_rags_endpoint_returns_rag_ids_from_config(
+async def test_rags_llama_stack_returns_rag_ids_from_config(
     mocker: MockerFixture, tmp_path: Path
 ) -> None:
-    """Test that /rags endpoint maps llama-stack IDs to user-facing rag_ids."""
+    """Test that list_rags_llama_stack maps llama-stack IDs to user-facing rag_ids."""
     byok_config = _make_byok_config(str(tmp_path))
-    mocker.patch("app.endpoints.rags.configuration", byok_config)
+    mocker.patch("app.endpoints.rags_llama_stack.configuration", byok_config)
 
     # pylint: disable=R0903
     class RagInfo:
@@ -323,23 +256,20 @@ async def test_rags_endpoint_returns_rag_ids_from_config(
     mock_client = mocker.AsyncMock()
     mock_client.vector_stores.list.return_value = RagList()
     mocker.patch(
-        "app.endpoints.rags.AsyncLlamaStackClientHolder"
+        "app.endpoints.rags_llama_stack.AsyncLlamaStackClientHolder"
     ).return_value.get_client.return_value = mock_client
 
-    request = Request(scope={"type": "http"})
-    auth: AuthTuple = ("test_user_id", "test_user", True, "test_token")
-
-    response = await rags_endpoint_handler(request=request, auth=auth)
+    response = await list_rags_llama_stack()
     assert response.rags == ["ocp-4.18-docs", "company-kb", "vs_unmapped"]
 
 
 @pytest.mark.asyncio
-async def test_rag_info_endpoint_accepts_rag_id_from_config(
+async def test_get_rag_llama_stack_accepts_rag_id_from_config(
     mocker: MockerFixture, tmp_path: Path
 ) -> None:
-    """Test that /rags/{rag_id} accepts a user-facing rag_id and resolves it."""
+    """Test that get_rag_llama_stack accepts a user-facing rag_id and resolves it."""
     byok_config = _make_byok_config(str(tmp_path))
-    mocker.patch("app.endpoints.rags.configuration", byok_config)
+    mocker.patch("app.endpoints.rags_llama_stack.configuration", byok_config)
 
     # pylint: disable=R0902,R0903
     class RagInfo:
@@ -359,16 +289,11 @@ async def test_rag_info_endpoint_accepts_rag_id_from_config(
     mock_client = mocker.AsyncMock()
     mock_client.vector_stores.retrieve.return_value = RagInfo()
     mocker.patch(
-        "app.endpoints.rags.AsyncLlamaStackClientHolder"
+        "app.endpoints.rags_llama_stack.AsyncLlamaStackClientHolder"
     ).return_value.get_client.return_value = mock_client
 
-    request = Request(scope={"type": "http"})
-    auth: AuthTuple = ("test_user_id", "test_user", True, "test_token")
-
     # Pass the user-facing rag_id, not the vector_store_id
-    response = await get_rag_endpoint_handler(
-        request=request, auth=auth, rag_id="ocp-4.18-docs"
-    )
+    response = await get_rag_llama_stack("ocp-4.18-docs")
 
     # The endpoint should resolve ocp-4.18-docs -> vs_abc123 for the lookup
     mock_client.vector_stores.retrieve.assert_called_once_with("vs_abc123")

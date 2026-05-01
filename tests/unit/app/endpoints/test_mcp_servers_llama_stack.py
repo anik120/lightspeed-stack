@@ -1,6 +1,6 @@
 # pylint: disable=protected-access,redefined-outer-name
 
-"""Unit tests for the MCP servers dynamic registration endpoint."""
+"""Unit tests for the Llama Stack implementation of MCP servers endpoints."""
 
 from pathlib import Path
 from typing import Any
@@ -11,7 +11,11 @@ from llama_stack_client import APIConnectionError
 from pydantic import AnyHttpUrl, SecretStr
 from pytest_mock import MockerFixture
 
-from app.endpoints import mcp_servers
+from app.endpoints.mcp_servers_llama_stack import (
+    delete_mcp_server_llama_stack,
+    list_mcp_servers,
+    register_mcp_server_llama_stack,
+)
 from authentication.interface import AuthTuple
 from configuration import AppConfig
 from models.config import (
@@ -90,14 +94,13 @@ def _make_app_config(mocker: MockerFixture, config: Configuration) -> AppConfig:
     app_config = AppConfig()
     app_config._configuration = config
     app_config._dynamic_mcp_server_names = set()
-    mocker.patch("app.endpoints.mcp_servers.configuration", app_config)
-    mocker.patch("app.endpoints.mcp_servers.authorize", lambda _: lambda func: func)
+    mocker.patch("app.endpoints.mcp_servers_llama_stack.configuration", app_config)
     return app_config
 
 
 def _mock_client(mocker: MockerFixture) -> Any:
     """Create and patch a mock Llama Stack client."""
-    mock_holder = mocker.patch("app.endpoints.mcp_servers.AsyncLlamaStackClientHolder")
+    mock_holder = mocker.patch("app.endpoints.mcp_servers_llama_stack.AsyncLlamaStackClientHolder")
     mock_client = mocker.AsyncMock()
     mock_holder.return_value.get_client.return_value = mock_client
     return mock_client
@@ -119,9 +122,7 @@ async def test_register_mcp_server_success(
         provider_id="MCP provider ID",
     )
 
-    result = await mcp_servers.register_mcp_server_handler(
-        request=mocker.Mock(), body=body, auth=MOCK_AUTH
-    )
+    result = await register_mcp_server_llama_stack(body)
 
     assert isinstance(result, MCPServerRegistrationResponse)
     assert result.name == "new-mcp-server"
@@ -155,9 +156,7 @@ async def test_register_mcp_server_duplicate_name(
     )
 
     with pytest.raises(HTTPException) as exc_info:
-        await mcp_servers.register_mcp_server_handler(
-            request=mocker.Mock(), body=body, auth=MOCK_AUTH
-        )
+        await register_mcp_server_llama_stack(body)
     assert exc_info.value.status_code == 409
 
 
@@ -178,9 +177,7 @@ async def test_register_mcp_server_llama_stack_failure(
     )
 
     with pytest.raises(HTTPException) as exc_info:
-        await mcp_servers.register_mcp_server_handler(
-            request=mocker.Mock(), body=body, auth=MOCK_AUTH
-        )
+        await register_mcp_server_llama_stack(body)
     assert exc_info.value.status_code == 503
 
     assert not app_config.is_dynamic_mcp_server("failing-server")
@@ -206,9 +203,7 @@ async def test_register_mcp_server_with_all_fields(
         timeout=30,
     )
 
-    result = await mcp_servers.register_mcp_server_handler(
-        request=mocker.Mock(), body=body, auth=MOCK_AUTH
-    )
+    result = await register_mcp_server_llama_stack(body)
 
     assert result.name == "full-mcp-server"
     assert result.provider_id == "custom-provider"
@@ -222,9 +217,7 @@ async def test_list_mcp_servers_empty(
     """Test listing servers returns static servers."""
     _make_app_config(mocker, mock_configuration)
 
-    result = await mcp_servers.list_mcp_servers_handler(
-        request=mocker.Mock(), auth=MOCK_AUTH
-    )
+    result = await list_mcp_servers()
 
     assert isinstance(result, MCPServerListResponse)
     assert len(result.servers) == 1
@@ -247,13 +240,9 @@ async def test_list_mcp_servers_with_dynamic(
         url="http://localhost:9999/mcp",
         provider_id="MCP provider ID",
     )
-    await mcp_servers.register_mcp_server_handler(
-        request=mocker.Mock(), body=body, auth=MOCK_AUTH
-    )
+    await register_mcp_server_llama_stack(body)
 
-    result = await mcp_servers.list_mcp_servers_handler(
-        request=mocker.Mock(), auth=MOCK_AUTH
-    )
+    result = await list_mcp_servers()
 
     assert len(result.servers) == 2
     sources = {s.name: s.source for s in result.servers}
@@ -277,14 +266,10 @@ async def test_delete_dynamic_mcp_server_success(
         url="http://localhost:7777/mcp",
         provider_id="MCP provider ID",
     )
-    await mcp_servers.register_mcp_server_handler(
-        request=mocker.Mock(), body=body, auth=MOCK_AUTH
-    )
+    await register_mcp_server_llama_stack(body)
     assert app_config.is_dynamic_mcp_server("to-delete")
 
-    result = await mcp_servers.delete_mcp_server_handler(
-        request=mocker.Mock(), name="to-delete", auth=MOCK_AUTH
-    )
+    result = await delete_mcp_server_llama_stack("to-delete")
 
     assert isinstance(result, MCPServerDeleteResponse)
     assert result.name == "to-delete"
@@ -306,9 +291,7 @@ async def test_delete_static_mcp_server_forbidden(
     _mock_client(mocker)
 
     with pytest.raises(HTTPException) as exc_info:
-        await mcp_servers.delete_mcp_server_handler(
-            request=mocker.Mock(), name="static-mcp", auth=MOCK_AUTH
-        )
+        await delete_mcp_server_llama_stack("static-mcp")
     assert exc_info.value.status_code == 403
 
 
@@ -322,9 +305,7 @@ async def test_delete_nonexistent_mcp_server(
     _mock_client(mocker)
 
     with pytest.raises(HTTPException) as exc_info:
-        await mcp_servers.delete_mcp_server_handler(
-            request=mocker.Mock(), name="no-such-server", auth=MOCK_AUTH
-        )
+        await delete_mcp_server_llama_stack("no-such-server")
     assert exc_info.value.status_code == 404
 
 
@@ -344,14 +325,10 @@ async def test_delete_mcp_server_llama_stack_failure(
         url="http://localhost:7777/mcp",
         provider_id="MCP provider ID",
     )
-    await mcp_servers.register_mcp_server_handler(
-        request=mocker.Mock(), body=body, auth=MOCK_AUTH
-    )
+    await register_mcp_server_llama_stack(body)
 
     with pytest.raises(HTTPException) as exc_info:
-        await mcp_servers.delete_mcp_server_handler(
-            request=mocker.Mock(), name="to-delete-fail", auth=MOCK_AUTH
-        )
+        await delete_mcp_server_llama_stack("to-delete-fail")
     assert exc_info.value.status_code == 503
 
 
@@ -429,21 +406,13 @@ async def test_register_and_delete_roundtrip(
         url="http://localhost:5555/mcp",
         provider_id="MCP provider ID",
     )
-    await mcp_servers.register_mcp_server_handler(
-        request=mocker.Mock(), body=body, auth=MOCK_AUTH
-    )
+    await register_mcp_server_llama_stack(body)
 
-    list_result = await mcp_servers.list_mcp_servers_handler(
-        request=mocker.Mock(), auth=MOCK_AUTH
-    )
+    list_result = await list_mcp_servers()
     assert len(list_result.servers) == 2
 
-    await mcp_servers.delete_mcp_server_handler(
-        request=mocker.Mock(), name="roundtrip-server", auth=MOCK_AUTH
-    )
+    await delete_mcp_server_llama_stack("roundtrip-server")
 
-    list_result = await mcp_servers.list_mcp_servers_handler(
-        request=mocker.Mock(), auth=MOCK_AUTH
-    )
+    list_result = await list_mcp_servers()
     assert len(list_result.servers) == 1
     assert list_result.servers[0].name == "static-mcp"

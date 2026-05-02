@@ -1,6 +1,6 @@
 # pylint: disable=redefined-outer-name, import-error,too-many-locals,too-many-lines
 # pyright: reportCallIssue=false
-"""Unit tests for the /query (v2) REST API endpoint using Responses API."""
+"""Unit tests for the Llama Stack /query REST API endpoint."""
 
 from typing import Any
 
@@ -10,7 +10,10 @@ from llama_stack_api.openai_responses import OpenAIResponseObject
 from llama_stack_client import APIConnectionError, APIStatusError, AsyncLlamaStackClient
 from pytest_mock import MockerFixture
 
-from app.endpoints.query import query_endpoint_handler, retrieve_response
+from app.endpoints.query_llama_stack import (
+    query_endpoint_handler_llama_stack,
+    retrieve_response,
+)
 from configuration import AppConfig
 from models.database.conversations import UserConversation
 from models.requests import Attachment, QueryRequest
@@ -46,7 +49,11 @@ def create_dummy_request() -> Request:
         request (fastapi.Request): A Request constructed with a bare HTTP scope
         (type "http") for use in tests.
     """
-    return Request(scope={"type": "http", "headers": []})
+    from models.config import Action
+
+    request = Request(scope={"type": "http", "headers": []})
+    request.state.authorized_actions = {Action.QUERY}
+    return request
 
 
 @pytest.fixture(name="setup_configuration")
@@ -109,10 +116,10 @@ class TestQueryEndpointHandler:
             query="What is Kubernetes?"
         )  # pyright: ignore[reportCallIssue]
 
-        mocker.patch("app.endpoints.query.configuration", setup_configuration)
-        mocker.patch("app.endpoints.query.check_configuration_loaded")
-        mocker.patch("app.endpoints.query.check_tokens_available")
-        mocker.patch("app.endpoints.query.validate_model_provider_override")
+        mocker.patch("app.endpoints.query_llama_stack.configuration", setup_configuration)
+        mocker.patch("app.endpoints.query_llama_stack.check_configuration_loaded")
+        mocker.patch("app.endpoints.query_llama_stack.check_tokens_available")
+        mocker.patch("app.endpoints.query_llama_stack.validate_model_provider_override")
 
         mock_client = mocker.AsyncMock(spec=AsyncLlamaStackClient)
         mock_response_obj = mocker.Mock()
@@ -122,15 +129,15 @@ class TestQueryEndpointHandler:
         mock_client_holder = mocker.Mock()
         mock_client_holder.get_client.return_value = mock_client
         mocker.patch(
-            "app.endpoints.query.AsyncLlamaStackClientHolder",
+            "app.endpoints.query_llama_stack.AsyncLlamaStackClientHolder",
             return_value=mock_client_holder,
         )
         mocker.patch(
-            "app.endpoints.query.get_topic_summary",
+            "app.endpoints.query_llama_stack.get_topic_summary",
             new=mocker.AsyncMock(return_value=None),
         )
         mocker.patch(
-            "app.endpoints.query.run_shield_moderation",
+            "app.endpoints.query_llama_stack.run_shield_moderation",
             new=mocker.AsyncMock(return_value=ShieldModerationPassed()),
         )
 
@@ -143,7 +150,7 @@ class TestQueryEndpointHandler:
             "model": "provider1/model1",
         }
         mocker.patch(
-            "app.endpoints.query.prepare_responses_params",
+            "app.endpoints.query_llama_stack.prepare_responses_params",
             new=mocker.AsyncMock(return_value=mock_responses_params),
         )
 
@@ -156,17 +163,17 @@ class TestQueryEndpointHandler:
             return mock_turn_summary
 
         mocker.patch(
-            "app.endpoints.query.retrieve_response", side_effect=mock_retrieve_response
+            "app.endpoints.query_llama_stack.retrieve_response", side_effect=mock_retrieve_response
         )
 
         mocker.patch(
-            "app.endpoints.query.normalize_conversation_id", return_value="123"
+            "app.endpoints.query_llama_stack.normalize_conversation_id", return_value="123"
         )
-        mocker.patch("app.endpoints.query.store_query_results")
-        mocker.patch("app.endpoints.query.consume_query_tokens")
-        mocker.patch("app.endpoints.query.get_available_quotas", return_value={})
+        mocker.patch("app.endpoints.query_llama_stack.store_query_results")
+        mocker.patch("app.endpoints.query_llama_stack.consume_query_tokens")
+        mocker.patch("app.endpoints.query_llama_stack.get_available_quotas", return_value={})
 
-        response = await query_endpoint_handler(
+        response = await query_endpoint_handler_llama_stack(
             request=dummy_request,
             query_request=query_request,
             auth=MOCK_AUTH,
@@ -189,10 +196,10 @@ class TestQueryEndpointHandler:
             query="What is Kubernetes?"
         )  # pyright: ignore[reportCallIssue]
 
-        mocker.patch("app.endpoints.query.configuration", setup_configuration)
-        mocker.patch("app.endpoints.query.check_configuration_loaded")
-        mocker.patch("app.endpoints.query.check_tokens_available")
-        mocker.patch("app.endpoints.query.validate_model_provider_override")
+        mocker.patch("app.endpoints.query_llama_stack.configuration", setup_configuration)
+        mocker.patch("app.endpoints.query_llama_stack.check_configuration_loaded")
+        mocker.patch("app.endpoints.query_llama_stack.check_tokens_available")
+        mocker.patch("app.endpoints.query_llama_stack.validate_model_provider_override")
 
         mock_client = mocker.AsyncMock(spec=AsyncLlamaStackClient)
         mock_response_obj = mocker.Mock()
@@ -202,11 +209,11 @@ class TestQueryEndpointHandler:
         mock_client_holder = mocker.Mock()
         mock_client_holder.get_client.return_value = mock_client
         mocker.patch(
-            "app.endpoints.query.AsyncLlamaStackClientHolder",
+            "app.endpoints.query_llama_stack.AsyncLlamaStackClientHolder",
             return_value=mock_client_holder,
         )
         mocker.patch(
-            "app.endpoints.query.run_shield_moderation",
+            "app.endpoints.query_llama_stack.run_shield_moderation",
             new=mocker.AsyncMock(return_value=ShieldModerationPassed()),
         )
 
@@ -218,7 +225,7 @@ class TestQueryEndpointHandler:
             referenced_documents=[inline_doc],
         )
         mocker.patch(
-            "app.endpoints.query.build_rag_context",
+            "app.endpoints.query_llama_stack.build_rag_context",
             new=mocker.AsyncMock(return_value=inline_rag),
         )
 
@@ -231,7 +238,7 @@ class TestQueryEndpointHandler:
             "model": "provider1/model1",
         }
         mocker.patch(
-            "app.endpoints.query.prepare_responses_params",
+            "app.endpoints.query_llama_stack.prepare_responses_params",
             new=mocker.AsyncMock(return_value=mock_responses_params),
         )
 
@@ -242,14 +249,14 @@ class TestQueryEndpointHandler:
         mock_turn_summary.referenced_documents = [tool_doc]
 
         mocker.patch(
-            "app.endpoints.query.retrieve_response",
+            "app.endpoints.query_llama_stack.retrieve_response",
             new=mocker.AsyncMock(return_value=mock_turn_summary),
         )
-        mocker.patch("app.endpoints.query.store_query_results")
-        mocker.patch("app.endpoints.query.consume_query_tokens")
-        mocker.patch("app.endpoints.query.get_available_quotas", return_value={})
+        mocker.patch("app.endpoints.query_llama_stack.store_query_results")
+        mocker.patch("app.endpoints.query_llama_stack.consume_query_tokens")
+        mocker.patch("app.endpoints.query_llama_stack.get_available_quotas", return_value={})
 
-        response = await query_endpoint_handler(
+        response = await query_endpoint_handler_llama_stack(
             request=dummy_request,
             query_request=query_request,
             auth=MOCK_AUTH,
@@ -277,15 +284,15 @@ class TestQueryEndpointHandler:
             conversation_id="123e4567-e89b-12d3-a456-426614174000",
         )  # pyright: ignore[reportCallIssue]
 
-        mocker.patch("app.endpoints.query.configuration", setup_configuration)
-        mocker.patch("app.endpoints.query.check_configuration_loaded")
-        mocker.patch("app.endpoints.query.check_tokens_available")
-        mocker.patch("app.endpoints.query.validate_model_provider_override")
+        mocker.patch("app.endpoints.query_llama_stack.configuration", setup_configuration)
+        mocker.patch("app.endpoints.query_llama_stack.check_configuration_loaded")
+        mocker.patch("app.endpoints.query_llama_stack.check_tokens_available")
+        mocker.patch("app.endpoints.query_llama_stack.validate_model_provider_override")
         mocker.patch(
-            "app.endpoints.query.normalize_conversation_id", return_value="123"
+            "app.endpoints.query_llama_stack.normalize_conversation_id", return_value="123"
         )
         mock_validate_conv = mocker.patch(
-            "app.endpoints.query.validate_and_retrieve_conversation",
+            "app.endpoints.query_llama_stack.validate_and_retrieve_conversation",
             return_value=mocker.Mock(spec=UserConversation),
         )
 
@@ -293,7 +300,7 @@ class TestQueryEndpointHandler:
         mock_client_holder = mocker.Mock()
         mock_client_holder.get_client.return_value = mock_client
         mocker.patch(
-            "app.endpoints.query.AsyncLlamaStackClientHolder",
+            "app.endpoints.query_llama_stack.AsyncLlamaStackClientHolder",
             return_value=mock_client_holder,
         )
 
@@ -306,22 +313,22 @@ class TestQueryEndpointHandler:
             "model": "provider1/model1",
         }
         mocker.patch(
-            "app.endpoints.query.prepare_responses_params",
+            "app.endpoints.query_llama_stack.prepare_responses_params",
             new=mocker.AsyncMock(return_value=mock_responses_params),
         )
         mocker.patch(
-            "app.endpoints.query.run_shield_moderation",
+            "app.endpoints.query_llama_stack.run_shield_moderation",
             new=mocker.AsyncMock(return_value=ShieldModerationPassed()),
         )
         mocker.patch(
-            "app.endpoints.query.retrieve_response",
+            "app.endpoints.query_llama_stack.retrieve_response",
             new=mocker.AsyncMock(return_value=TurnSummary()),
         )
-        mocker.patch("app.endpoints.query.store_query_results")
-        mocker.patch("app.endpoints.query.consume_query_tokens")
-        mocker.patch("app.endpoints.query.get_available_quotas", return_value={})
+        mocker.patch("app.endpoints.query_llama_stack.store_query_results")
+        mocker.patch("app.endpoints.query_llama_stack.consume_query_tokens")
+        mocker.patch("app.endpoints.query_llama_stack.get_available_quotas", return_value={})
 
-        response = await query_endpoint_handler(
+        response = await query_endpoint_handler_llama_stack(
             request=dummy_request,
             query_request=query_request,
             auth=MOCK_AUTH,
@@ -350,12 +357,12 @@ class TestQueryEndpointHandler:
             ],
         )  # pyright: ignore[reportCallIssue]
 
-        mocker.patch("app.endpoints.query.configuration", setup_configuration)
-        mocker.patch("app.endpoints.query.check_configuration_loaded")
-        mocker.patch("app.endpoints.query.check_tokens_available")
-        mocker.patch("app.endpoints.query.validate_model_provider_override")
+        mocker.patch("app.endpoints.query_llama_stack.configuration", setup_configuration)
+        mocker.patch("app.endpoints.query_llama_stack.check_configuration_loaded")
+        mocker.patch("app.endpoints.query_llama_stack.check_tokens_available")
+        mocker.patch("app.endpoints.query_llama_stack.validate_model_provider_override")
         mock_validate = mocker.patch(
-            "app.endpoints.query.validate_attachments_metadata"
+            "app.endpoints.query_llama_stack.validate_attachments_metadata"
         )
 
         mock_client = mocker.AsyncMock(spec=AsyncLlamaStackClient)
@@ -366,15 +373,15 @@ class TestQueryEndpointHandler:
         mock_client_holder = mocker.Mock()
         mock_client_holder.get_client.return_value = mock_client
         mocker.patch(
-            "app.endpoints.query.AsyncLlamaStackClientHolder",
+            "app.endpoints.query_llama_stack.AsyncLlamaStackClientHolder",
             return_value=mock_client_holder,
         )
         mocker.patch(
-            "app.endpoints.query.get_topic_summary",
+            "app.endpoints.query_llama_stack.get_topic_summary",
             new=mocker.AsyncMock(return_value=None),
         )
         mocker.patch(
-            "app.endpoints.query.run_shield_moderation",
+            "app.endpoints.query_llama_stack.run_shield_moderation",
             new=mocker.AsyncMock(return_value=ShieldModerationPassed()),
         )
 
@@ -387,7 +394,7 @@ class TestQueryEndpointHandler:
             "model": "provider1/model1",
         }
         mocker.patch(
-            "app.endpoints.query.prepare_responses_params",
+            "app.endpoints.query_llama_stack.prepare_responses_params",
             new=mocker.AsyncMock(return_value=mock_responses_params),
         )
 
@@ -395,16 +402,16 @@ class TestQueryEndpointHandler:
             return TurnSummary()
 
         mocker.patch(
-            "app.endpoints.query.retrieve_response", side_effect=mock_retrieve_response
+            "app.endpoints.query_llama_stack.retrieve_response", side_effect=mock_retrieve_response
         )
         mocker.patch(
-            "app.endpoints.query.normalize_conversation_id", return_value="123"
+            "app.endpoints.query_llama_stack.normalize_conversation_id", return_value="123"
         )
-        mocker.patch("app.endpoints.query.store_query_results")
-        mocker.patch("app.endpoints.query.consume_query_tokens")
-        mocker.patch("app.endpoints.query.get_available_quotas", return_value={})
+        mocker.patch("app.endpoints.query_llama_stack.store_query_results")
+        mocker.patch("app.endpoints.query_llama_stack.consume_query_tokens")
+        mocker.patch("app.endpoints.query_llama_stack.get_available_quotas", return_value={})
 
-        await query_endpoint_handler(
+        await query_endpoint_handler_llama_stack(
             request=dummy_request,
             query_request=query_request,
             auth=MOCK_AUTH,
@@ -425,20 +432,20 @@ class TestQueryEndpointHandler:
             query="What is Kubernetes?", generate_topic_summary=True
         )  # pyright: ignore[reportCallIssue]
 
-        mocker.patch("app.endpoints.query.configuration", setup_configuration)
-        mocker.patch("app.endpoints.query.check_configuration_loaded")
-        mocker.patch("app.endpoints.query.check_tokens_available")
-        mocker.patch("app.endpoints.query.validate_model_provider_override")
+        mocker.patch("app.endpoints.query_llama_stack.configuration", setup_configuration)
+        mocker.patch("app.endpoints.query_llama_stack.check_configuration_loaded")
+        mocker.patch("app.endpoints.query_llama_stack.check_tokens_available")
+        mocker.patch("app.endpoints.query_llama_stack.validate_model_provider_override")
 
         mock_client = mocker.AsyncMock(spec=AsyncLlamaStackClient)
         mock_client_holder = mocker.Mock()
         mock_client_holder.get_client.return_value = mock_client
         mocker.patch(
-            "app.endpoints.query.AsyncLlamaStackClientHolder",
+            "app.endpoints.query_llama_stack.AsyncLlamaStackClientHolder",
             return_value=mock_client_holder,
         )
         mocker.patch(
-            "app.endpoints.query.run_shield_moderation",
+            "app.endpoints.query_llama_stack.run_shield_moderation",
             new=mocker.AsyncMock(return_value=ShieldModerationPassed()),
         )
 
@@ -451,26 +458,26 @@ class TestQueryEndpointHandler:
             "model": "provider1/model1",
         }
         mocker.patch(
-            "app.endpoints.query.prepare_responses_params",
+            "app.endpoints.query_llama_stack.prepare_responses_params",
             new=mocker.AsyncMock(return_value=mock_responses_params),
         )
 
         mocker.patch(
-            "app.endpoints.query.retrieve_response",
+            "app.endpoints.query_llama_stack.retrieve_response",
             new=mocker.AsyncMock(return_value=TurnSummary()),
         )
         mock_get_topic_summary = mocker.patch(
-            "app.endpoints.query.get_topic_summary",
+            "app.endpoints.query_llama_stack.get_topic_summary",
             new=mocker.AsyncMock(return_value="Topic: Kubernetes"),
         )
         mocker.patch(
-            "app.endpoints.query.normalize_conversation_id", return_value="123"
+            "app.endpoints.query_llama_stack.normalize_conversation_id", return_value="123"
         )
-        mocker.patch("app.endpoints.query.store_query_results")
-        mocker.patch("app.endpoints.query.consume_query_tokens")
-        mocker.patch("app.endpoints.query.get_available_quotas", return_value={})
+        mocker.patch("app.endpoints.query_llama_stack.store_query_results")
+        mocker.patch("app.endpoints.query_llama_stack.consume_query_tokens")
+        mocker.patch("app.endpoints.query_llama_stack.get_available_quotas", return_value={})
 
-        await query_endpoint_handler(
+        await query_endpoint_handler_llama_stack(
             request=dummy_request,
             query_request=query_request,
             auth=MOCK_AUTH,
@@ -491,10 +498,10 @@ class TestQueryEndpointHandler:
             query="What is Kubernetes?"
         )  # pyright: ignore[reportCallIssue]
 
-        mocker.patch("app.endpoints.query.configuration", setup_configuration)
-        mocker.patch("app.endpoints.query.check_configuration_loaded")
-        mocker.patch("app.endpoints.query.check_tokens_available")
-        mocker.patch("app.endpoints.query.validate_model_provider_override")
+        mocker.patch("app.endpoints.query_llama_stack.configuration", setup_configuration)
+        mocker.patch("app.endpoints.query_llama_stack.check_configuration_loaded")
+        mocker.patch("app.endpoints.query_llama_stack.check_tokens_available")
+        mocker.patch("app.endpoints.query_llama_stack.validate_model_provider_override")
 
         mock_client = mocker.AsyncMock(spec=AsyncLlamaStackClient)
         mock_response_obj = mocker.Mock()
@@ -504,15 +511,15 @@ class TestQueryEndpointHandler:
         mock_client_holder = mocker.Mock()
         mock_client_holder.get_client.return_value = mock_client
         mocker.patch(
-            "app.endpoints.query.AsyncLlamaStackClientHolder",
+            "app.endpoints.query_llama_stack.AsyncLlamaStackClientHolder",
             return_value=mock_client_holder,
         )
         mocker.patch(
-            "app.endpoints.query.get_topic_summary",
+            "app.endpoints.query_llama_stack.get_topic_summary",
             new=mocker.AsyncMock(return_value=None),
         )
         mocker.patch(
-            "app.endpoints.query.run_shield_moderation",
+            "app.endpoints.query_llama_stack.run_shield_moderation",
             new=mocker.AsyncMock(return_value=ShieldModerationPassed()),
         )
 
@@ -525,7 +532,7 @@ class TestQueryEndpointHandler:
             "model": "azure/model1",
         }
         mocker.patch(
-            "app.endpoints.query.prepare_responses_params",
+            "app.endpoints.query_llama_stack.prepare_responses_params",
             new=mocker.AsyncMock(return_value=mock_responses_params),
         )
 
@@ -534,7 +541,7 @@ class TestQueryEndpointHandler:
         mock_azure_manager.is_token_expired = True
         mock_azure_manager.refresh_token.return_value = True
         mocker.patch(
-            "app.endpoints.query.AzureEntraIDManager", return_value=mock_azure_manager
+            "app.endpoints.query_llama_stack.AzureEntraIDManager", return_value=mock_azure_manager
         )
 
         mock_updated_client = mocker.AsyncMock(spec=AsyncLlamaStackClient)
@@ -545,11 +552,11 @@ class TestQueryEndpointHandler:
             return_value=mock_response_obj_updated
         )
         mock_update_token = mocker.patch(
-            "app.endpoints.query.update_azure_token",
+            "app.endpoints.query_llama_stack.update_azure_token",
             new=mocker.AsyncMock(return_value=mock_updated_client),
         )
         mocker.patch(
-            "app.endpoints.query.get_topic_summary",
+            "app.endpoints.query_llama_stack.get_topic_summary",
             new=mocker.AsyncMock(return_value=None),
         )
 
@@ -557,16 +564,16 @@ class TestQueryEndpointHandler:
             return TurnSummary()
 
         mocker.patch(
-            "app.endpoints.query.retrieve_response", side_effect=mock_retrieve_response
+            "app.endpoints.query_llama_stack.retrieve_response", side_effect=mock_retrieve_response
         )
         mocker.patch(
-            "app.endpoints.query.normalize_conversation_id", return_value="123"
+            "app.endpoints.query_llama_stack.normalize_conversation_id", return_value="123"
         )
-        mocker.patch("app.endpoints.query.store_query_results")
-        mocker.patch("app.endpoints.query.consume_query_tokens")
-        mocker.patch("app.endpoints.query.get_available_quotas", return_value={})
+        mocker.patch("app.endpoints.query_llama_stack.store_query_results")
+        mocker.patch("app.endpoints.query_llama_stack.consume_query_tokens")
+        mocker.patch("app.endpoints.query_llama_stack.get_available_quotas", return_value={})
 
-        await query_endpoint_handler(
+        await query_endpoint_handler_llama_stack(
             request=dummy_request,
             query_request=query_request,
             auth=MOCK_AUTH,
@@ -609,7 +616,7 @@ class TestRetrieveResponse:
         mock_summary.llm_response = "Response text"
         mock_summary.token_usage = TokenCounter(input_tokens=10, output_tokens=5)
         mocker.patch(
-            "app.endpoints.query.build_turn_summary",
+            "app.endpoints.query_llama_stack.build_turn_summary",
             return_value=mock_summary,
         )
 
@@ -643,7 +650,7 @@ class TestRetrieveResponse:
         mock_moderation_result.moderation_id = "mod_123"
         mock_moderation_result.refusal_response = mock_refusal
         mock_append = mocker.patch(
-            "app.endpoints.query.append_turn_items_to_conversation",
+            "app.endpoints.query_llama_stack.append_turn_items_to_conversation",
             new=mocker.AsyncMock(),
         )
 
@@ -701,7 +708,7 @@ class TestRetrieveResponse:
             )
         )
         mocker.patch(
-            "app.endpoints.query.handle_known_apistatus_errors",
+            "app.endpoints.query_llama_stack.handle_known_apistatus_errors",
             return_value=mocker.Mock(
                 model_dump=lambda: {
                     "status_code": 500,
@@ -797,7 +804,7 @@ class TestRetrieveResponse:
         mock_summary.tool_results = [mock_tool_result]
         mock_summary.token_usage = TokenCounter(input_tokens=10, output_tokens=5)
         mocker.patch(
-            "app.endpoints.query.build_turn_summary",
+            "app.endpoints.query_llama_stack.build_turn_summary",
             return_value=mock_summary,
         )
 

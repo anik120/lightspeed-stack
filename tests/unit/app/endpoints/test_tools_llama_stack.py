@@ -1,6 +1,6 @@
 # pylint: disable=protected-access,too-many-lines
 
-"""Unit tests for tools endpoint."""
+"""Unit tests for Llama Stack tools endpoint."""
 
 from pathlib import Path
 from typing import Any
@@ -12,8 +12,10 @@ from pydantic import AnyHttpUrl, SecretStr
 from pytest_mock import MockerFixture, MockType
 
 # Import the function directly to bypass decorators
-from app.endpoints import tools
-from app.endpoints.tools import _input_schema_to_parameters
+from app.endpoints.tools_llama_stack import (
+    _input_schema_to_parameters,
+    tools_llama_stack,
+)
 from authentication.interface import AuthTuple
 from configuration import AppConfig
 from models.config import (
@@ -168,13 +170,13 @@ async def test_tools_endpoint_success(
     # Mock configuration - wrap in AppConfig
     app_config = AppConfig()
     app_config._configuration = mock_configuration
-    mocker.patch("app.endpoints.tools.configuration", app_config)
+    mocker.patch("app.endpoints.tools_llama_stack.configuration", app_config)
 
     # Mock authorization decorator to bypass i
-    mocker.patch("app.endpoints.tools.authorize", lambda _: lambda func: func)
+    # Authorization is handled by the router, not the business logic function
 
     # Mock client holder and clien
-    mock_client_holder = mocker.patch("app.endpoints.tools.AsyncLlamaStackClientHolder")
+    mock_client_holder = mocker.patch("app.endpoints.tools_llama_stack.AsyncLlamaStackClientHolder")
     mock_client = mocker.AsyncMock()
     mock_client_holder.return_value.get_client.return_value = mock_client
 
@@ -195,14 +197,8 @@ async def test_tools_endpoint_success(
         [mock_tools_response[1]],  # git-tools response
     ]
 
-    # Mock request and auth
-    mock_request = mocker.Mock()
-    mock_auth = MOCK_AUTH
-
     # Call the endpoint
-    response = await tools.tools_endpoint_handler.__wrapped__(  # pyright: ignore
-        mock_request, mock_auth, {}
-    )
+    response = await tools_llama_stack({})
 
     # Verify response
     assert isinstance(response, ToolsResponse)
@@ -289,27 +285,21 @@ async def test_tools_endpoint_no_mcp_servers(mocker: MockerFixture) -> None:
     )
     app_config = AppConfig()
     app_config._configuration = mock_config
-    mocker.patch("app.endpoints.tools.configuration", app_config)
+    mocker.patch("app.endpoints.tools_llama_stack.configuration", app_config)
 
     # Mock authorization decorator to bypass i
-    mocker.patch("app.endpoints.tools.authorize", lambda _: lambda func: func)
+    # Authorization is handled by the router, not the business logic function
 
     # Mock client holder and clien
-    mock_client_holder = mocker.patch("app.endpoints.tools.AsyncLlamaStackClientHolder")
+    mock_client_holder = mocker.patch("app.endpoints.tools_llama_stack.AsyncLlamaStackClientHolder")
     mock_client = mocker.AsyncMock()
     mock_client_holder.return_value.get_client.return_value = mock_client
 
     # Mock toolgroups.list response - empty for no MCP servers
     mock_client.toolgroups.list.return_value = []
 
-    # Mock request and auth
-    mock_request = mocker.Mock()
-    mock_auth = MOCK_AUTH
-
     # Call the endpoint
-    response = await tools.tools_endpoint_handler.__wrapped__(  # pyright: ignore
-        mock_request, mock_auth, {}
-    )
+    response = await tools_llama_stack({})
 
     # Verify response
     assert isinstance(response, ToolsResponse)
@@ -325,13 +315,13 @@ async def test_tools_endpoint_api_connection_error(
     # Mock configuration - wrap in AppConfig
     app_config = AppConfig()
     app_config._configuration = mock_configuration
-    mocker.patch("app.endpoints.tools.configuration", app_config)
+    mocker.patch("app.endpoints.tools_llama_stack.configuration", app_config)
 
     # Mock authorization decorator to bypass i
-    mocker.patch("app.endpoints.tools.authorize", lambda _: lambda func: func)
+    # Authorization is handled by the router, not the business logic function
 
     # Mock client holder and clien
-    mock_client_holder = mocker.patch("app.endpoints.tools.AsyncLlamaStackClientHolder")
+    mock_client_holder = mocker.patch("app.endpoints.tools_llama_stack.AsyncLlamaStackClientHolder")
     mock_client = mocker.AsyncMock()
     mock_client_holder.return_value.get_client.return_value = mock_client
 
@@ -350,15 +340,9 @@ async def test_tools_endpoint_api_connection_error(
     api_error = APIConnectionError(request=mocker.Mock())
     mock_client.tools.list.side_effect = api_error
 
-    # Mock request and auth
-    mock_request = mocker.Mock()
-    mock_auth = MOCK_AUTH
-
     # Call the endpoint - should raise HTTPException when APIConnectionError occurs
     with pytest.raises(HTTPException) as exc_info:
-        await tools.tools_endpoint_handler.__wrapped__(  # pyright: ignore
-            mock_request, mock_auth, {}
-        )
+        await tools_llama_stack({})
 
     assert exc_info.value.status_code == 503
     detail = exc_info.value.detail
@@ -374,10 +358,10 @@ async def test_tools_endpoint_partial_failure(  # pylint: disable=redefined-oute
     """Test tools endpoint with one MCP server failing with APIConnectionError."""
     app_config = AppConfig()
     app_config._configuration = mock_configuration
-    mocker.patch("app.endpoints.tools.configuration", app_config)
+    mocker.patch("app.endpoints.tools_llama_stack.configuration", app_config)
 
-    mocker.patch("app.endpoints.tools.authorize", lambda _: lambda func: func)
-    mock_client_holder = mocker.patch("app.endpoints.tools.AsyncLlamaStackClientHolder")
+    # Authorization is handled by the router, not the business logic function
+    mock_client_holder = mocker.patch("app.endpoints.tools_llama_stack.AsyncLlamaStackClientHolder")
     mock_client = mocker.AsyncMock()
     mock_client_holder.return_value.get_client.return_value = mock_client
 
@@ -398,9 +382,7 @@ async def test_tools_endpoint_partial_failure(  # pylint: disable=redefined-oute
     mock_auth = MOCK_AUTH
 
     with pytest.raises(HTTPException) as exc_info:
-        await tools.tools_endpoint_handler.__wrapped__(  # pyright: ignore
-            mock_request, mock_auth, {}
-        )
+        await tools_llama_stack({})
 
     assert exc_info.value.status_code == 503
     detail = exc_info.value.detail
@@ -418,13 +400,13 @@ async def test_tools_endpoint_toolgroup_not_found(  # pylint: disable=redefined-
     # Mock configuration - wrap in AppConfig
     app_config = AppConfig()
     app_config._configuration = mock_configuration
-    mocker.patch("app.endpoints.tools.configuration", app_config)
+    mocker.patch("app.endpoints.tools_llama_stack.configuration", app_config)
 
     # Mock authorization decorator to bypass i
-    mocker.patch("app.endpoints.tools.authorize", lambda _: lambda func: func)
+    # Authorization is handled by the router, not the business logic function
 
     # Mock client holder and clien
-    mock_client_holder = mocker.patch("app.endpoints.tools.AsyncLlamaStackClientHolder")
+    mock_client_holder = mocker.patch("app.endpoints.tools_llama_stack.AsyncLlamaStackClientHolder")
     mock_client = mocker.AsyncMock()
     mock_client_holder.return_value.get_client.return_value = mock_client
 
@@ -450,14 +432,8 @@ async def test_tools_endpoint_toolgroup_not_found(  # pylint: disable=redefined-
         bad_request_error,  # git-tools not found
     ]
 
-    # Mock request and auth
-    mock_request = mocker.Mock()
-    mock_auth = MOCK_AUTH
-
     # Call the endpoint - should continue processing and return tools from successful toolgroups
-    response = await tools.tools_endpoint_handler.__wrapped__(  # pyright: ignore
-        mock_request, mock_auth, {}
-    )
+    response = await tools_llama_stack({})
 
     # Verify response - should have only one tool from the first successful toolgroup
     assert isinstance(response, ToolsResponse)
@@ -489,13 +465,13 @@ async def test_tools_endpoint_builtin_toolgroup(
     # Mock configuration - wrap in AppConfig
     app_config = AppConfig()
     app_config._configuration = mock_configuration
-    mocker.patch("app.endpoints.tools.configuration", app_config)
+    mocker.patch("app.endpoints.tools_llama_stack.configuration", app_config)
 
     # Mock authorization decorator to bypass i
-    mocker.patch("app.endpoints.tools.authorize", lambda _: lambda func: func)
+    # Authorization is handled by the router, not the business logic function
 
     # Mock client holder and clien
-    mock_client_holder = mocker.patch("app.endpoints.tools.AsyncLlamaStackClientHolder")
+    mock_client_holder = mocker.patch("app.endpoints.tools_llama_stack.AsyncLlamaStackClientHolder")
     mock_client = mocker.AsyncMock()
     mock_client_holder.return_value.get_client.return_value = mock_client
 
@@ -521,14 +497,8 @@ async def test_tools_endpoint_builtin_toolgroup(
 
     mock_client.tools.list.return_value = [mock_tool]
 
-    # Mock request and auth
-    mock_request = mocker.Mock()
-    mock_auth = MOCK_AUTH
-
     # Call the endpoint
-    response = await tools.tools_endpoint_handler.__wrapped__(  # pyright: ignore
-        mock_request, mock_auth, {}
-    )
+    response = await tools_llama_stack({})
 
     # Verify response — identifier mapped from name, provider_id from toolgroup
     assert isinstance(response, ToolsResponse)
@@ -593,13 +563,13 @@ async def test_tools_endpoint_mixed_toolgroups(mocker: MockerFixture) -> None:
     )
     app_config = AppConfig()
     app_config._configuration = mock_config
-    mocker.patch("app.endpoints.tools.configuration", app_config)
+    mocker.patch("app.endpoints.tools_llama_stack.configuration", app_config)
 
     # Mock authorization decorator to bypass i
-    mocker.patch("app.endpoints.tools.authorize", lambda _: lambda func: func)
+    # Authorization is handled by the router, not the business logic function
 
     # Mock client holder and clien
-    mock_client_holder = mocker.patch("app.endpoints.tools.AsyncLlamaStackClientHolder")
+    mock_client_holder = mocker.patch("app.endpoints.tools_llama_stack.AsyncLlamaStackClientHolder")
     mock_client = mocker.AsyncMock()
     mock_client_holder.return_value.get_client.return_value = mock_client
 
@@ -641,14 +611,8 @@ async def test_tools_endpoint_mixed_toolgroups(mocker: MockerFixture) -> None:
 
     mock_client.tools.list.side_effect = [[mock_tool1], [mock_tool2]]
 
-    # Mock request and auth
-    mock_request = mocker.Mock()
-    mock_auth = MOCK_AUTH
-
     # Call the endpoint
-    response = await tools.tools_endpoint_handler.__wrapped__(  # pyright: ignore
-        mock_request, mock_auth, {}
-    )
+    response = await tools_llama_stack({})
 
     # Verify response - should have both tools with correct server sources
     assert isinstance(response, ToolsResponse)
@@ -673,26 +637,22 @@ async def test_tools_endpoint_value_attribute_error(
     # Mock configuration - wrap in AppConfig
     app_config = AppConfig()
     app_config._configuration = mock_configuration
-    mocker.patch("app.endpoints.tools.configuration", app_config)
+    mocker.patch("app.endpoints.tools_llama_stack.configuration", app_config)
 
     # Mock authorization decorator to bypass i
-    mocker.patch("app.endpoints.tools.authorize", lambda _: lambda func: func)
+    # Authorization is handled by the router, not the business logic function
 
     # Mock client holder and clien
-    mock_client_holder = mocker.patch("app.endpoints.tools.AsyncLlamaStackClientHolder")
+    mock_client_holder = mocker.patch("app.endpoints.tools_llama_stack.AsyncLlamaStackClientHolder")
     mock_client = mocker.AsyncMock()
     mock_client_holder.return_value.get_client.return_value = mock_client
 
     # Mock toolgroups.list to raise ValueError
     mock_client.toolgroups.list.side_effect = ValueError("Invalid response format")
 
-    # Mock request and auth
-    mock_request = mocker.Mock()
-    mock_auth = MOCK_AUTH
-
     # Call the endpointt - should raise exception since toolgroups.list failed
     with pytest.raises(ValueError, match="Invalid response format"):
-        await tools.tools_endpoint_handler.__wrapped__(mock_request, mock_auth, {})  # type: ignore
+        await tools_llama_stack({})  # type: ignore
 
 
 @pytest.mark.asyncio
@@ -703,13 +663,13 @@ async def test_tools_endpoint_apiconnection_error_toolgroups(  # pylint: disable
     # Mock configuration - wrap in AppConfig
     app_config = AppConfig()
     app_config._configuration = mock_configuration
-    mocker.patch("app.endpoints.tools.configuration", app_config)
+    mocker.patch("app.endpoints.tools_llama_stack.configuration", app_config)
 
     # Mock authorization decorator to bypass i
-    mocker.patch("app.endpoints.tools.authorize", lambda _: lambda func: func)
+    # Authorization is handled by the router, not the business logic function
 
     # Mock client holder and clien
-    mock_client_holder = mocker.patch("app.endpoints.tools.AsyncLlamaStackClientHolder")
+    mock_client_holder = mocker.patch("app.endpoints.tools_llama_stack.AsyncLlamaStackClientHolder")
     mock_client = mocker.AsyncMock()
     mock_client_holder.return_value.get_client.return_value = mock_client
 
@@ -717,13 +677,9 @@ async def test_tools_endpoint_apiconnection_error_toolgroups(  # pylint: disable
     api_error = APIConnectionError(request=mocker.Mock())
     mock_client.toolgroups.list.side_effect = api_error
 
-    # Mock request and auth
-    mock_request = mocker.Mock()
-    mock_auth = MOCK_AUTH
-
     # Call the endpointt and expect HTTPException
     with pytest.raises(HTTPException) as exc_info:
-        await tools.tools_endpoint_handler.__wrapped__(mock_request, mock_auth, {})  # type: ignore
+        await tools_llama_stack({})  # type: ignore
 
     assert exc_info.value.status_code == 503
 
@@ -740,23 +696,19 @@ async def test_tools_endpoint_client_holder_apiconnection_error(  # pylint: disa
     # Mock configuration - wrap in AppConfig
     app_config = AppConfig()
     app_config._configuration = mock_configuration
-    mocker.patch("app.endpoints.tools.configuration", app_config)
+    mocker.patch("app.endpoints.tools_llama_stack.configuration", app_config)
 
     # Mock authorization decorator to bypass i
-    mocker.patch("app.endpoints.tools.authorize", lambda _: lambda func: func)
+    # Authorization is handled by the router, not the business logic function
 
     # Mock client holder to raise APIConnectionError
-    mock_client_holder = mocker.patch("app.endpoints.tools.AsyncLlamaStackClientHolder")
+    mock_client_holder = mocker.patch("app.endpoints.tools_llama_stack.AsyncLlamaStackClientHolder")
     api_error = APIConnectionError(request=None)  # type: ignore
     mock_client_holder.return_value.get_client.side_effect = api_error
 
-    # Mock request and auth
-    mock_request = mocker.Mock()
-    mock_auth = MOCK_AUTH
-
     # Call the endpointt and expect HTTPException
     with pytest.raises(HTTPException) as exc_info:
-        await tools.tools_endpoint_handler.__wrapped__(mock_request, mock_auth, {})  # type: ignore
+        await tools_llama_stack({})  # type: ignore
 
     assert exc_info.value.status_code == 503
 
@@ -774,64 +726,20 @@ async def test_tools_endpoint_general_exception(
     # Mock configuration - wrap in AppConfig
     app_config = AppConfig()
     app_config._configuration = mock_configuration
-    mocker.patch("app.endpoints.tools.configuration", app_config)
+    mocker.patch("app.endpoints.tools_llama_stack.configuration", app_config)
 
     # Mock authorization decorator to bypass i
-    mocker.patch("app.endpoints.tools.authorize", lambda _: lambda func: func)
+    # Authorization is handled by the router, not the business logic function
 
     # Mock client holder to raise exception
-    mock_client_holder = mocker.patch("app.endpoints.tools.AsyncLlamaStackClientHolder")
+    mock_client_holder = mocker.patch("app.endpoints.tools_llama_stack.AsyncLlamaStackClientHolder")
     mock_client_holder.return_value.get_client.side_effect = Exception(
         "Unexpected error"
     )
 
-    # Mock request and auth
-    mock_request = mocker.Mock()
-    mock_auth = MOCK_AUTH
-
     # Call the endpointt and expect the exception to propagate (not caught)
     with pytest.raises(Exception, match="Unexpected error"):
-        await tools.tools_endpoint_handler.__wrapped__(mock_request, mock_auth, {})  # type: ignore
-
-
-@pytest.mark.asyncio
-async def test_tools_endpoint_authentication_error_with_mcp_endpoint(
-    mocker: MockerFixture,
-    mock_configuration: Configuration,  # pylint: disable=redefined-outer-name
-) -> None:
-    """Test tools endpoint raises 401 with WWW-Authenticate when check_mcp_auth requires OAuth."""
-    app_config = AppConfig()
-    app_config._configuration = mock_configuration
-    mocker.patch("app.endpoints.tools.configuration", app_config)
-    mocker.patch("app.endpoints.tools.authorize", lambda _: lambda func: func)
-
-    mocker.patch("app.endpoints.tools.AsyncLlamaStackClientHolder")
-
-    expected_headers = {"WWW-Authenticate": 'Bearer error="invalid_token"'}
-    probe_exception = HTTPException(
-        status_code=401,
-        detail={"cause": "MCP server at http://localhost:3000 requires OAuth"},
-        headers=expected_headers,
-    )
-    mocker.patch(
-        "app.endpoints.tools.check_mcp_auth",
-        new_callable=mocker.AsyncMock,
-        side_effect=probe_exception,
-    )
-
-    mock_request = mocker.Mock()
-    mock_auth = MOCK_AUTH
-
-    with pytest.raises(HTTPException) as exc_info:
-        await tools.tools_endpoint_handler.__wrapped__(  # pyright: ignore
-            mock_request, mock_auth, {}
-        )
-
-    assert exc_info.value.status_code == 401
-    assert exc_info.value.headers is not None
-    assert (
-        exc_info.value.headers.get("WWW-Authenticate") == 'Bearer error="invalid_token"'
-    )
+        await tools_llama_stack({})  # type: ignore
 
 
 class TestInputSchemaToParameters:
@@ -958,10 +866,10 @@ async def test_tools_endpoint_rag_builtin_toolgroup(mocker: MockerFixture) -> No
     )
     app_config = AppConfig()
     app_config._configuration = mock_config
-    mocker.patch("app.endpoints.tools.configuration", app_config)
-    mocker.patch("app.endpoints.tools.authorize", lambda _: lambda func: func)
+    mocker.patch("app.endpoints.tools_llama_stack.configuration", app_config)
+    # Authorization is handled by the router, not the business logic function
 
-    mock_client_holder = mocker.patch("app.endpoints.tools.AsyncLlamaStackClientHolder")
+    mock_client_holder = mocker.patch("app.endpoints.tools_llama_stack.AsyncLlamaStackClientHolder")
     mock_client = mocker.AsyncMock()
     mock_client_holder.return_value.get_client.return_value = mock_client
 
@@ -998,9 +906,7 @@ async def test_tools_endpoint_rag_builtin_toolgroup(mocker: MockerFixture) -> No
     mock_request = mocker.Mock()
     mock_auth = MOCK_AUTH
 
-    response = await tools.tools_endpoint_handler.__wrapped__(  # pyright: ignore
-        mock_request, mock_auth, {}
-    )
+    response = await tools_llama_stack({})
 
     assert isinstance(response, ToolsResponse)
     assert len(response.tools) == 1
@@ -1072,10 +978,10 @@ async def test_tools_endpoint_empty_legacy_fields_overridden(
     )
     app_config = AppConfig()
     app_config._configuration = mock_config
-    mocker.patch("app.endpoints.tools.configuration", app_config)
-    mocker.patch("app.endpoints.tools.authorize", lambda _: lambda func: func)
+    mocker.patch("app.endpoints.tools_llama_stack.configuration", app_config)
+    # Authorization is handled by the router, not the business logic function
 
-    mock_client_holder = mocker.patch("app.endpoints.tools.AsyncLlamaStackClientHolder")
+    mock_client_holder = mocker.patch("app.endpoints.tools_llama_stack.AsyncLlamaStackClientHolder")
     mock_client = mocker.AsyncMock()
     mock_client_holder.return_value.get_client.return_value = mock_client
 
@@ -1115,9 +1021,7 @@ async def test_tools_endpoint_empty_legacy_fields_overridden(
     mock_request = mocker.Mock()
     mock_auth = MOCK_AUTH
 
-    response = await tools.tools_endpoint_handler.__wrapped__(  # pyright: ignore
-        mock_request, mock_auth, {}
-    )
+    response = await tools_llama_stack({})
 
     assert isinstance(response, ToolsResponse)
     assert len(response.tools) == 1

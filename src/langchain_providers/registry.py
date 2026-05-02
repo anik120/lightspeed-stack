@@ -47,7 +47,10 @@ class LLMProviderRegistry:
             self._providers.clear()
 
         self._config = config
-        logger.info("Initializing LLM provider registry with %d providers", len(config.providers))
+        logger.info(
+            "Initializing LLM provider registry with %d providers",
+            len(config.providers),
+        )
 
         # Initialize each configured provider
         for provider_name, provider_config in config.providers.items():
@@ -61,7 +64,9 @@ class LLMProviderRegistry:
                 )
             except Exception as e:
                 logger.error("Failed to initialize provider '%s': %s", provider_name, e)
-                raise ValueError(f"Failed to initialize provider '{provider_name}': {e}") from e
+                raise ValueError(
+                    f"Failed to initialize provider '{provider_name}': {e}"
+                ) from e
 
         # Validate default provider exists
         if config.default_provider not in self._providers:

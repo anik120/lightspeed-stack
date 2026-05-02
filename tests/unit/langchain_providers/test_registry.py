@@ -15,6 +15,8 @@ def openai_config():
     """OpenAI provider configuration."""
     return LangChainProviderConfig(
         api_key=SecretStr("test-key"),
+        api_base=None,
+        api_version=None,
         models=["gpt-4", "gpt-3.5-turbo"],
         timeout=30,
         max_retries=3,
@@ -30,6 +32,7 @@ def azure_config():
         api_version="2023-05-15",
         models=["gpt-4", "gpt-35-turbo"],
         timeout=30,
+        max_retries=3,
     )
 
 
@@ -39,8 +42,10 @@ def watsonx_config():
     return LangChainProviderConfig(
         api_key=SecretStr("test-key"),
         api_base="https://us-south.ml.cloud.ibm.com",
+        api_version=None,
         models=["ibm/granite-13b-chat-v2"],
         timeout=60,
+        max_retries=3,
     )
 
 
@@ -54,6 +59,8 @@ def langchain_config(openai_config, azure_config):
         },
         default_provider="openai",
         default_model="gpt-4",
+        enable_streaming=True,
+        enable_tracing=False,
     )
 
 
@@ -78,6 +85,8 @@ async def test_registry_initialization_single_provider(openai_config):
         providers={"openai": openai_config},
         default_provider="openai",
         default_model="gpt-4",
+        enable_streaming=True,
+        enable_tracing=False,
     )
 
     registry = LLMProviderRegistry()
@@ -100,6 +109,8 @@ async def test_registry_initialization_all_providers(
         },
         default_provider="openai",
         default_model="gpt-4",
+        enable_streaming=True,
+        enable_tracing=False,
     )
 
     registry = LLMProviderRegistry()
@@ -116,6 +127,8 @@ async def test_registry_invalid_default_provider(openai_config):
         providers={"openai": openai_config},
         default_provider="nonexistent",
         default_model="gpt-4",
+        enable_streaming=True,
+        enable_tracing=False,
     )
 
     registry = LLMProviderRegistry()
@@ -160,27 +173,38 @@ async def test_get_provider_before_initialization():
 @pytest.mark.asyncio
 async def test_get_chat_model_with_defaults(langchain_config):
     """Test getting chat model with default provider and model."""
+    from langchain_openai import ChatOpenAI
+
     registry = LLMProviderRegistry()
     await registry.initialize(langchain_config)
 
     model = await registry.get_chat_model()
 
     assert model is not None
+    assert isinstance(model, ChatOpenAI)
     assert model.model_name == "gpt-4"
 
 
 @pytest.mark.asyncio
 async def test_get_chat_model_specific_provider(langchain_config):
     """Test getting chat model from specific provider."""
+    from langchain_openai import AzureChatOpenAI, ChatOpenAI
+
     registry = LLMProviderRegistry()
     await registry.initialize(langchain_config)
 
     # Get from OpenAI
-    openai_model = await registry.get_chat_model(model_id="gpt-3.5-turbo", provider="openai")
+    openai_model = await registry.get_chat_model(
+        model_id="gpt-3.5-turbo", provider="openai"
+    )
+    assert isinstance(openai_model, ChatOpenAI)
     assert openai_model.model_name == "gpt-3.5-turbo"
 
     # Get from Azure
-    azure_model = await registry.get_chat_model(model_id="gpt-35-turbo", provider="azure")
+    azure_model = await registry.get_chat_model(
+        model_id="gpt-35-turbo", provider="azure"
+    )
+    assert isinstance(azure_model, AzureChatOpenAI)
     assert azure_model.deployment_name == "gpt-35-turbo"
 
 
@@ -254,6 +278,8 @@ async def test_reinitialize_registry(langchain_config, openai_config):
         providers={"openai": openai_config},
         default_provider="openai",
         default_model="gpt-4",
+        enable_streaming=True,
+        enable_tracing=False,
     )
     await registry.initialize(new_config)
     assert len(registry.list_providers()) == 1
@@ -264,6 +290,10 @@ async def test_azure_provider_missing_api_base():
     """Test Azure provider requires api_base."""
     config = LangChainProviderConfig(
         api_key=SecretStr("test-key"),
+        api_base=None,
+        api_version=None,
+        timeout=60,
+        max_retries=3,
         models=["gpt-4"],
     )
 
@@ -276,6 +306,10 @@ async def test_watsonx_provider_missing_api_base():
     """Test Watsonx provider requires api_base."""
     config = LangChainProviderConfig(
         api_key=SecretStr("test-key"),
+        api_base=None,
+        api_version=None,
+        timeout=60,
+        max_retries=3,
         models=["ibm/granite-13b-chat-v2"],
     )
 
